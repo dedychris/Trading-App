@@ -3,11 +3,13 @@ import type { TFState } from '../src/lib/signals';
 
 const NOW = Date.now();
 let fresh = true;
+let sigAge = 20_000;
+let wrMock = { pct: 70, coin: { wins: 21, n: 30 }, pool: { wins: 200, n: 300 }, method: 'koin', periodDays: 10 };
 vi.mock('../src/store/scan', () => ({ doScan: vi.fn(async () => {}) }));
 vi.mock('../src/lib/binance', () => ({ getDerivatives: vi.fn(async () => ({ fundingRate: 0.0001, longPct: 55, oiChange24h: 1, nextFundingTime: 0, markPrice: 1, openInterest: 1, longShortRatio: 1.2 })) }));
 vi.mock('../src/lib/backtest', () => ({
-  findSignals: () => [{ i: 1, t: fresh ? NOW - 20_000 : NOW - 3_600_000, dir: 'LONG', entry: 100, atrPct: 0.2, f: { volume: true, ema200: true, bollinger: true } }],
-  winrate: () => ({ pct: 70, coin: { wins: 21, n: 30 }, pool: { wins: 200, n: 300 }, method: 'koin', periodDays: 10 }),
+  findSignals: () => [{ i: 1, t: fresh ? Date.now() - sigAge : Date.now() - 3_600_000, dir: 'LONG', entry: 100, atrPct: 0.2, f: { volume: true, ema200: true, bollinger: true } }],
+  winrate: () => wrMock,
 }));
 
 const { useApp } = await import('../src/store/app');
@@ -39,7 +41,11 @@ const flush = () => new Promise((r) => setTimeout(r, 20));
 const open = () => Object.values(useApp.getState().book.positions).filter((p) => p.status === 'open');
 
 describe('auto trading', () => {
-  beforeEach(() => { fresh = true; });
+  beforeEach(() => {
+    fresh = true;
+    sigAge = 20_000;
+    wrMock = { pct: 70, coin: { wins: 21, n: 30 }, pool: { wins: 200, n: 300 }, method: 'koin', periodDays: 10 };
+  });
   it('buka posisi Golden baru dengan setting auto (TP/SL/trailing, label AUTO), maks posisi dihormati', async () => {
     setup([{ symbol: 'AAAUSDT' }, { symbol: 'BBBUSDT' }, { symbol: 'CCCUSDT' }]);
     await runAutoOnce();
@@ -68,10 +74,33 @@ describe('auto trading', () => {
     fresh = false;
     setup([{ symbol: 'AAAUSDT' }]);
     await runAutoOnce();
-    expect(useApp.getState().autoLog[0].text).toMatch(/bukan sinyal baru/);
+    expect(useApp.getState().autoLog[0].text).toMatch(/batas 2 candle/);
+    expect(useApp.getState().autoDecision.AAAUSDT.text).toMatch(/^dilewati: sinyal sudah berjalan/);
     fresh = true;
     setup([{ symbol: 'AAAUSDT' }], 'BEARISH');
     await runAutoOnce();
     expect(useApp.getState().autoLog[0].text).toMatch(/melawan arah BTC/);
+  });
+  it('sinyal yang muncul 1 candle lalu masih boleh di-entry', async () => {
+    sigAge = 15 * 60_000 + 20_000;
+    setup([{ symbol: 'AAAUSDT' }]);
+    await runAutoOnce();
+    await flush();
+    expect(open().length).toBe(1);
+    expect(useApp.getState().autoDecision.AAAUSDT.text).toMatch(/^dibuka/);
+  });
+  it('winrate rendah tapi sampel < 10 → diabaikan & tetap entry; sampel besar → dilewati', async () => {
+    wrMock = { pct: 20, coin: { wins: 0, n: 0 }, pool: { wins: 1, n: 5 }, method: 'gabungan', periodDays: 10 };
+    setup([{ symbol: 'AAAUSDT' }]);
+    await runAutoOnce();
+    await flush();
+    expect(open().length).toBe(1);
+    expect(useApp.getState().autoLog[0].text).toMatch(/winrate diabaikan \(sampel 5 < 10\)/);
+    wrMock = { pct: 20, coin: { wins: 0, n: 0 }, pool: { wins: 10, n: 50 }, method: 'gabungan', periodDays: 10 };
+    setup([{ symbol: 'AAAUSDT' }]);
+    await runAutoOnce();
+    await flush();
+    expect(open().length).toBe(0);
+    expect(useApp.getState().autoLog[0].text).toMatch(/\(50 kejadian\) di bawah winrate impas/);
   });
 });

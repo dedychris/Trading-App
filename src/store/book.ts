@@ -10,7 +10,7 @@ export const defaultSettings = (): Settings => ({
   slPct: 7,
   trailOn: true,
   trailPct: 4,
-  auto: { enabled: false, deviceId: null, leverage: 10, marginMode: 'fixed', marginFixed: 100, marginPercent: 2, tpPct: 14, slPct: 7, trailOn: true, trailPct: 4, maxOpen: 3, dailyLossPct: 5 },
+  auto: { enabled: false, deviceId: null, leverage: 10, marginMode: 'fixed', marginFixed: 100, marginPercent: 2, tpPct: 14, slPct: 7, trailOn: true, trailPct: 4, maxOpen: 3, dailyLossPct: 5, freshCandles: 2, ignoreSmallSample: true, minSample: 10 },
   marginMode: 'fixed',
   marginFixed: 100,
   marginPercent: 5,

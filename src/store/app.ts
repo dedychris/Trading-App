@@ -36,6 +36,7 @@ type AppState = {
   toasts: Toast[];
   detail: string | null; // simbol yang sedang dibuka
   autoLog: AutoLog[];
+  autoDecision: Record<string, AutoLog>; // keputusan auto terakhir per koin (ditampilkan di kartu)
   autoRun: { lastAt?: number; nextAt?: number; running?: boolean };
   setBook: (b: Book) => void;
   updateSettings: (p: Partial<Settings>) => void;
@@ -52,6 +53,7 @@ export const useApp = create<AppState>((set, get) => ({
   toasts: [],
   detail: null,
   autoLog: [],
+  autoDecision: {},
   autoRun: {},
   setBook: (b) => set({ book: b }),
   updateSettings: (p) => {

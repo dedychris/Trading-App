@@ -36,9 +36,13 @@ export function autoAllowedHere() {
   return a.enabled && (!a.deviceId || a.deviceId === deviceId());
 }
 
-function log(text: string, tone: AutoLog['tone'] = 'info') {
-  const cur = useApp.getState().autoLog;
-  useApp.setState({ autoLog: [{ t: Date.now(), text, tone }, ...cur].slice(0, 60) });
+function log(text: string, tone: AutoLog['tone'] = 'info', symbol?: string, short?: string) {
+  const st = useApp.getState();
+  const entry = { t: Date.now(), text, tone };
+  useApp.setState({
+    autoLog: [entry, ...st.autoLog].slice(0, 80),
+    ...(symbol ? { autoDecision: { ...st.autoDecision, [symbol]: { ...entry, text: short ?? text } } } : {}),
+  });
 }
 
 export const dayStartWib = (now = Date.now()) => Math.floor((now + WIB) / DAY) * DAY - WIB;
@@ -77,6 +81,7 @@ function evaluate() {
     return;
   }
   const now = Date.now();
+  useApp.setState({ autoDecision: {} }); // kartu cuma menampilkan keputusan run terbaru
   const cands = res.rows.filter((r) => r.setup && AUTO_KEYS.includes(r.setup.key));
   if (!cands.length) {
     log(`Scan ${new Date(res.at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}: tidak ada sinyal ⭐ Golden / 3TF searah.`);
@@ -96,7 +101,7 @@ function evaluate() {
   for (const { r, wr } of ranked) {
     const setup = r.setup!;
     const tag = `${base(r.symbol)} ${setup.dir} (${setupShort(setup.key)})`;
-    const skip = (why: string) => log(`Lewati ${tag}: ${why}`);
+    const skip = (why: string) => log(`Lewati ${tag}: ${why}`, 'info', r.symbol, `dilewati: ${why}`);
     const b = useApp.getState().book;
     const openAuto = Object.values(b.positions).filter((p) => p.status === 'open' && p.auto);
     if (openAuto.length + planned >= a.maxOpen) {
@@ -111,8 +116,10 @@ function evaluate() {
     const ss = res.series[r.symbol];
     const sigs = findSignals(ss, setup.key);
     const last = sigs[sigs.length - 1];
-    if (!last || last.dir !== setup.dir || now - last.t > SLOT + 2 * DELAY) {
-      skip('sinyal sudah berjalan sejak candle sebelumnya (bukan sinyal baru)');
+    const maxAge = Math.max(1, a.freshCandles) * SLOT + 2 * DELAY;
+    if (!last || last.dir !== setup.dir || now - last.t > maxAge) {
+      const age = last ? Math.round((now - last.t) / SLOT) : null;
+      skip(`sinyal sudah berjalan ${age !== null ? `±${age} candle` : 'lama'} (batas ${a.freshCandles} candle terakhir)`);
       continue;
     }
     const id = `auto-${r.symbol}-${last.t}`;
@@ -148,8 +155,11 @@ function evaluate() {
     const price = useApp.getState().prices[r.symbol] ?? r.price;
     const margin = a.marginMode === 'fixed' ? a.marginFixed : (walletBalance(b) * a.marginPercent) / 100;
     const pv = previewOrder({ dir: setup.dir, entry: price, leverage: a.leverage, margin, entryType: 'market', bnb: b.settings.bnb, tpPct: a.tpPct, slPct: a.slPct });
-    if (wr.pct === null || wr.pct < pv.breakevenWinrate) {
-      skip(`winrate ${wr.pct === null ? 'belum ada data' : fmtPct(wr.pct, 0)} di bawah winrate impas ${fmtPct(pv.breakevenWinrate, 0)}`);
+    // sampel yang dipakai winrate: koin ini kalau ≥ 20 kejadian, selain itu gabungan 40 koin
+    const sample = wr.method === 'koin' ? wr.coin.n : wr.pool.n;
+    const smallSample = a.ignoreSmallSample && sample < a.minSample;
+    if (!smallSample && (wr.pct === null || wr.pct < pv.breakevenWinrate)) {
+      skip(`winrate ${wr.pct === null ? 'belum ada data' : fmtPct(wr.pct, 0)} (${sample} kejadian) di bawah winrate impas ${fmtPct(pv.breakevenWinrate, 0)}`);
       continue;
     }
     const pat = matchPatterns(features({ setupKey: setup.key, dir: setup.dir, tf: r.tf, btcTrend: res.btc?.trend ?? null, leverage: a.leverage, symbol: r.symbol, slPct: a.slPct }), b);
@@ -162,7 +172,7 @@ function evaluate() {
       continue;
     }
     planned++;
-    void openAuto_({ id, symbol: r.symbol, setup, price, margin, wrPct: wr.pct, wrN: wr.coin.n, breakeven: pv.breakevenWinrate, tf: r.tf, needSentiment: book.settings.filters.sentiment, tag });
+    void openAuto_({ id, symbol: r.symbol, setup, price, margin, wrPct: wr.pct, wrN: sample, smallSample, breakeven: pv.breakevenWinrate, tf: r.tf, needSentiment: book.settings.filters.sentiment, tag });
   }
 }
 
@@ -172,8 +182,9 @@ async function openAuto_(x: {
   setup: { key: SetupKey; dir: 'LONG' | 'SHORT' };
   price: number;
   margin: number;
-  wrPct: number;
+  wrPct: number | null;
   wrN: number;
+  smallSample: boolean;
   breakeven: number;
   tf: Snapshot['tf'];
   needSentiment: boolean;
@@ -187,13 +198,13 @@ async function openAuto_(x: {
     /* data funding opsional, kecuali filter sentimen aktif */
   }
   if (x.needSentiment && (!d || !sentimentPass(x.setup.dir, d.fundingRate, d.longPct))) {
-    log(`Lewati ${x.tag}: tidak lolos filter Funding/Long-Short`);
+    log(`Lewati ${x.tag}: tidak lolos filter Funding/Long-Short`, 'info', x.symbol, 'dilewati: tidak lolos filter Funding/Long-Short');
     return;
   }
   const b = useApp.getState().book;
   if (b.positions[x.id]) return;
   if (Object.values(b.positions).filter((p) => p.status === 'open' && p.auto).length >= a.maxOpen) {
-    log(`Lewati ${x.tag}: batas maks ${a.maxOpen} posisi auto sudah penuh`);
+    log(`Lewati ${x.tag}: batas maks ${a.maxOpen} posisi auto sudah penuh`, 'info', x.symbol, `dilewati: maks ${a.maxOpen} posisi auto penuh`);
     return;
   }
   const price = useApp.getState().prices[x.symbol] ?? x.price;
@@ -211,8 +222,9 @@ async function openAuto_(x: {
     breakevenWinrate: x.breakeven,
   };
   openPosition({ id: x.id, symbol: x.symbol, dir: x.setup.dir, leverage: a.leverage, margin: x.margin, entry: price, entryType: 'market', snap, tpPct: a.tpPct, slPct: a.slPct, trailPct: a.trailOn ? a.trailPct : null, auto: true });
-  const text = `🤖 Auto ${x.setup.dir} ${base(x.symbol)} ${a.leverage}× di ${fmtPrice(price)} · ${setupShort(x.setup.key)} · winrate ${fmtPct(x.wrPct, 0)}`;
-  log(`Buka ${x.tag} di ${fmtPrice(price)}, margin ${fmtUsd(x.margin)} USDT, winrate ${fmtPct(x.wrPct, 0)}`, 'good');
+  const wrText = x.smallSample ? `winrate diabaikan (sampel ${x.wrN} < ${a.minSample})` : `winrate ${fmtPct(x.wrPct, 0)}`;
+  const text = `🤖 Auto ${x.setup.dir} ${base(x.symbol)} ${a.leverage}× di ${fmtPrice(price)} · ${setupShort(x.setup.key)} · ${wrText}`;
+  log(`Buka ${x.tag} di ${fmtPrice(price)}, margin ${fmtUsd(x.margin)} USDT, ${wrText}`, 'good', x.symbol, `dibuka di ${fmtPrice(price)} · ${wrText}`);
   useApp.getState().toast(text, 'good');
   const s = useApp.getState().book.settings;
   if (s.sound) beep('good');

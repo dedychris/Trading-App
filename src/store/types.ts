@@ -79,6 +79,9 @@ export type AutoSettings = {
   trailPct: number;
   maxOpen: number;
   dailyLossPct: number;
+  freshCandles: number; // sinyal boleh di-entry kalau muncul maks N candle 15m terakhir
+  ignoreSmallSample: boolean; // abaikan syarat winrate kalau sampel backtest kecil
+  minSample: number;
 };
 
 export type Settings = {

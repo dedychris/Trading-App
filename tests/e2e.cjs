@@ -131,6 +131,11 @@ async function route(page) {
   }
   console.log('log auto:', (await ap.locator('text=Log auto').locator('..').innerText()).split('\n').slice(1, 7));
   await ap.screenshot({ path: `${OUT}/auto-settings.png`, fullPage: true });
+  await ap.evaluate(() => { location.hash = 'scan'; });
+  await ap.clock.runFor(500);
+  await new Promise((r) => setTimeout(r, 500));
+  console.log('kartu dengan keputusan auto:', await ap.locator('text=/^🤖 (dilewati|dibuka)/').count());
+  await ap.screenshot({ path: `${OUT}/auto-scanner.png` });
   // overflow horizontal di HP?
   const ov = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
   console.log('overflow mobile px:', ov);

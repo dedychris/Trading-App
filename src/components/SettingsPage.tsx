@@ -108,6 +108,19 @@ function AutoSection() {
               {a.trailOn && (<><span className="text-xs text-mute">jarak</span><NumInput value={a.trailPct} onChange={(v) => set({ trailPct: v })} /><span className="text-xs text-mute">%</span></>)}
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <span className="w-28">Sinyal baru</span>
+              <span className="text-xs text-mute">muncul maks</span>
+              <NumInput value={a.freshCandles} onChange={(v) => set({ freshCandles: Math.max(1, Math.round(v)) })} max={8} />
+              <span className="text-xs text-mute">candle 15m terakhir (2 = ≤ 30 menit)</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-28">Winrate</span>
+              <input type="checkbox" checked={a.ignoreSmallSample} onChange={(e) => set({ ignoreSmallSample: e.target.checked })} aria-label="Abaikan winrate sampel kecil" />
+              <span className="text-xs">abaikan syarat winrate kalau sampel &lt;</span>
+              <NumInput value={a.minSample} onChange={(v) => set({ minSample: Math.round(v) })} max={200} />
+              <span className="text-xs text-mute">kejadian</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
               <span className="w-28">Maks posisi auto</span>
               <NumInput value={a.maxOpen} onChange={(v) => set({ maxOpen: Math.round(v) })} max={20} />
               <span className="text-xs text-mute">(1 posisi per koin)</span>
@@ -130,7 +143,7 @@ function AutoSection() {
             {pv.netWin <= (pv.feeOpen + pv.feeClose) * 2 && <div className="mt-1 text-warn">⚠️ TP terlalu kecil dibanding fee.</div>}
           </div>
           <div className="text-xs text-mute">
-            Syarat entry: sinyal baru · winrate ≥ impas · tidak melawan BTC · tidak sideways (ADX 15m & 1H ≥ 25, Bollinger 1H tidak menyempit) · tidak ada peringatan pola SL · lolos filter aktif.
+            Syarat entry: sinyal muncul ≤ {a.freshCandles} candle terakhir · winrate ≥ impas{a.ignoreSmallSample ? ` (diabaikan kalau sampel < ${a.minSample})` : ''} · tidak melawan BTC · tidak sideways (ADX 15m & 1H ≥ 25, Bollinger 1H tidak menyempit) · tidak ada peringatan pola SL · lolos filter aktif.
           </div>
           <div className="text-xs">
             PnL hari ini: <Signed v={today.pnl}>{fmtUsd(today.pnl, true)} USDT</Signed>

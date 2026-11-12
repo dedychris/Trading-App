@@ -47,6 +47,8 @@ function CoinCard({ row }: { row: ScanRow }) {
   const settings = useApp((s) => s.book.settings);
   const btc = useApp((s) => s.scan.result?.btc);
   const live = useApp((s) => s.prices[row.symbol]);
+  const autoOn = useApp((s) => s.book.settings.auto.enabled);
+  const decision = useApp((s) => s.autoDecision[row.symbol]);
   const setup = row.setup!;
   const wr = useWinrate(row.symbol, setup.key, setup.dir, settings.leverage);
   const grid = row.tf[SETUP_INFO[setup.key].grid];
@@ -67,8 +69,13 @@ function CoinCard({ row }: { row: ScanRow }) {
       <div className="flex items-center gap-2">
         <div className="text-base font-bold">{setup.key === 'GOLD' && <span title="Golden: 4H + 1H + 15M qualify semua">⭐ </span>}{base(row.symbol)}</div>
         <DirBadge dir={setup.dir} />
-        <div className="ml-auto">
-          <WinratePill pct={wr?.pct ?? null} n={wr?.coin.n} />
+        <div className="ml-auto text-right">
+          <WinratePill pct={wr?.pct ?? null} compact />
+          {wr && (
+            <div className="mt-0.5 text-[10px] text-mute num" title="Jumlah kejadian setup yang sama di histori: koin ini / gabungan 40 koin">
+              koin {wr.coin.n} · gabungan {wr.pool.n}
+            </div>
+          )}
         </div>
       </div>
       <div className="mt-1 flex items-baseline gap-2 text-sm">
@@ -114,6 +121,11 @@ function CoinCard({ row }: { row: ScanRow }) {
         <div className="mt-2 space-y-0.5 text-[11px]">
           {conflict && <div className="text-warn">⚠️ BTC {btc!.trend} — melawan arah BTC</div>}
           {failed.length > 0 && <div className="text-mute">✗ Tidak lolos filter: {failed.join(', ')}</div>}
+        </div>
+      )}
+      {autoOn && decision && (
+        <div className={`mt-1.5 rounded-md px-2 py-1 text-[11px] ${decision.tone === 'good' ? 'bg-up/10 text-up' : 'bg-panel2 text-mute'}`}>
+          🤖 {decision.text}
         </div>
       )}
       <div className="mt-1.5">
