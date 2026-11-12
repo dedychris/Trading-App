@@ -164,18 +164,27 @@ export async function getDerivatives(symbol: string): Promise<Derivs> {
   };
 }
 
-/** Harga live via WebSocket Binance (semua simbol, update tiap ~1 detik). Fallback polling. */
+/**
+ * Harga live via WebSocket Binance (semua simbol, update tiap ~1 detik). Fallback polling.
+ * Ada watchdog: kalau socket "zombie" (tetap OPEN tapi tidak kirim data — sering terjadi
+ * setelah laptop sleep / ganti jaringan), koneksi dibuang paksa, polling jalan, lalu reconnect.
+ */
+export const STALE_MS = 15_000;
 export function subscribePrices(onPrices: (p: Record<string, number>) => void, onStatus: (s: 'live' | 'polling' | 'off') => void): () => void {
   let ws: WebSocket | null = null;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let closed = false;
   let failures = 0;
+  let lastMsg = 0;
 
   const startPolling = () => {
     if (pollTimer) return;
     onStatus('polling');
-    const tick = () => getAllPrices().then(onPrices).catch(() => onStatus('off'));
+    const tick = () => getAllPrices().then((p) => {
+      onPrices(p);
+      if (pollTimer) onStatus('polling');
+    }).catch(() => onStatus('off'));
     tick();
     pollTimer = setInterval(tick, 4000);
   };
@@ -184,26 +193,47 @@ export function subscribePrices(onPrices: (p: Record<string, number>) => void, o
     pollTimer = null;
   };
 
-  const connect = () => {
+  /** Buang socket sekarang juga (tanpa menunggu onclose yang bisa telat lama), lalu jadwalkan reconnect. */
+  const drop = (delay: number) => {
+    const old = ws;
+    ws = null;
+    if (old) {
+      old.onopen = old.onmessage = old.onclose = old.onerror = null;
+      try {
+        old.close();
+      } catch {
+        /* abaikan */
+      }
+    }
     if (closed) return;
+    failures++;
+    startPolling();
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = setTimeout(connect, delay);
+  };
+
+  const connect = () => {
+    retryTimer = null;
+    if (closed || ws) return;
+    let sock: WebSocket;
     try {
-      ws = new WebSocket('wss://fstream.binance.com/ws/!miniTicker@arr');
+      sock = new WebSocket('wss://fstream.binance.com/ws/!miniTicker@arr');
     } catch {
       startPolling();
       return;
     }
-    const openTimeout = setTimeout(() => {
-      if (ws && ws.readyState !== WebSocket.OPEN) ws.close();
-    }, 8000);
-    ws.onopen = () => {
-      clearTimeout(openTimeout);
+    ws = sock;
+    lastMsg = Date.now();
+    sock.onopen = () => {
       failures = 0;
+      lastMsg = Date.now();
       stopPolling();
       onStatus('live');
       // isi semua harga sekali (miniTicker hanya kirim simbol yang berubah)
       getAllPrices().then(onPrices).catch(() => {});
     };
-    ws.onmessage = (ev) => {
+    sock.onmessage = (ev) => {
+      lastMsg = Date.now();
       try {
         const arr = JSON.parse(ev.data as string) as { s: string; c: string }[];
         const out: Record<string, number> = {};
@@ -213,19 +243,49 @@ export function subscribePrices(onPrices: (p: Record<string, number>) => void, o
         /* abaikan */
       }
     };
-    ws.onclose = () => {
-      clearTimeout(openTimeout);
-      if (closed) return;
-      failures++;
-      startPolling();
-      retryTimer = setTimeout(connect, Math.min(60_000, 3000 * failures));
+    sock.onclose = () => {
+      if (ws === sock) drop(Math.min(60_000, 3000 * (failures + 1)));
     };
-    ws.onerror = () => ws?.close();
+    sock.onerror = () => sock.close();
   };
+
+  /** Cek kesehatan koneksi: dipanggil berkala & saat app kembali aktif / online lagi. */
+  const check = () => {
+    if (closed) return;
+    if (!ws) {
+      if (!retryTimer) connect();
+      return;
+    }
+    const silent = Date.now() - lastMsg;
+    if (ws.readyState === WebSocket.OPEN) {
+      if (silent > STALE_MS) drop(1000); // zombie: dulu sehat, sekarang diam → reconnect cepat
+    } else if (silent > 8000) drop(Math.min(60_000, 3000 * (failures + 1))); // gagal connect → backoff
+  };
+  const watchdog = setInterval(check, 5000);
+  const onWake = () => {
+    if (document.visibilityState === 'visible') check();
+  };
+  const onOnline = () => {
+    if (ws && ws.readyState === WebSocket.OPEN && Date.now() - lastMsg < 3000) return;
+    drop(500); // jaringan baru → socket lama hampir pasti mati
+  };
+  document.addEventListener('visibilitychange', onWake);
+  window.addEventListener('online', onOnline);
+  window.addEventListener('focus', check);
+
   connect();
   return () => {
     closed = true;
-    ws?.close();
+    clearInterval(watchdog);
+    document.removeEventListener('visibilitychange', onWake);
+    window.removeEventListener('online', onOnline);
+    window.removeEventListener('focus', check);
+    const old = ws;
+    ws = null;
+    if (old) {
+      old.onopen = old.onmessage = old.onclose = old.onerror = null;
+      old.close();
+    }
     stopPolling();
     if (retryTimer) clearTimeout(retryTimer);
     onStatus('off');
