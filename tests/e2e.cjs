@@ -64,7 +64,7 @@ async function route(page) {
   await page.waitForTimeout(800);
   await page.screenshot({ path: `${OUT}/m-detail.png`, fullPage: false });
   // ganti leverage → preview berubah
-  const lev = page.locator('input[inputmode=numeric]').first();
+  const lev = page.getByRole('dialog').locator('input[inputmode=numeric]').first();
   await lev.fill('10');
   const tpTxt = await page.getByText('TP (+14% margin)').locator('..').textContent();
   console.log('preview 10×:', tpTxt);

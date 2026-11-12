@@ -56,9 +56,14 @@ describe('simulasi', () => {
 describe('sinyal & backtest', () => {
   it('klasifikasi grup', () => {
     const q = (dir: 'LONG' | 'SHORT', ok = true) => ({ dir, qualifies: ok }) as TFState;
-    expect(classify({ '15m': q('LONG'), '1h': q('LONG'), '4h': q('LONG') })).toEqual({ key: '3TF', dir: 'LONG' });
+    expect(classify({ '15m': q('LONG'), '1h': q('LONG'), '4h': q('LONG') })).toEqual({ key: 'GOLD', dir: 'LONG' });
+    expect(classify({ '15m': q('LONG', false), '1h': q('LONG'), '4h': q('LONG', false) })).toEqual({ key: '3TF', dir: 'LONG' });
     expect(classify({ '15m': q('SHORT'), '1h': q('LONG'), '4h': q('LONG') })).toEqual({ key: '1H4H', dir: 'LONG' });
-    expect(classify({ '15m': q('SHORT'), '1h': q('SHORT'), '4h': q('LONG', false) })).toEqual({ key: '15M1H', dir: 'SHORT' });
+    expect(classify({ '15m': q('SHORT'), '1h': q('SHORT', false), '4h': q('LONG') })).toEqual({ key: '15M1H', dir: 'SHORT' });
+    expect(classify({ '15m': q('SHORT', false), '1h': q('LONG'), '4h': q('SHORT') })).toEqual({ key: '15M4H', dir: 'SHORT' });
+    expect(classify({ '15m': q('SHORT'), '1h': q('LONG', false), '4h': q('SHORT', false) })).toEqual({ key: '15M4H', dir: 'SHORT' });
+    // cuma satu TF qualify & dua TF lain berlawanan → tidak tampil
+    expect(classify({ '15m': q('SHORT'), '1h': q('LONG', false), '4h': q('LONG', false) })).toBeNull();
     expect(classify({ '15m': q('LONG', false), '1h': q('LONG', false), '4h': q('LONG', false) })).toBeNull();
   });
   it('TP & SL di candle yang sama dihitung KALAH', () => {

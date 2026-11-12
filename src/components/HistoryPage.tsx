@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { auditTrade } from '../lib/audit';
 import { base, fmtDuration, fmtPct, fmtPrice, fmtTime, fmtUsd } from '../lib/format';
-import { SETUP_INFO } from '../lib/signals';
+import { setupShort } from '../lib/signals';
 import { useApp } from '../store/app';
 import { positionLedger } from '../store/book';
 import type { Book, Position } from '../store/types';
@@ -62,7 +62,7 @@ function TradeRow({ p, book }: { p: Position; book: Book }) {
           </div>
           <div className="mt-0.5 text-[11px] text-mute">
             {fmtTime(p.closedAt)} · {fmtDuration((p.closedAt ?? 0) - p.openedAt)}
-            {p.snapEntry?.setup && ` · ${SETUP_INFO[p.snapEntry.setup.key].short}`}
+            {p.snapEntry?.setup && ` · ${setupShort(p.snapEntry.setup.key)}`}
           </div>
         </div>
         <div className="text-right">

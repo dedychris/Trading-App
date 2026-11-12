@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { runScan, type ScanRow } from '../lib/scanner';
 import { btcConflict, FILTER_INFO, filterPass, SETUP_INFO, SETUP_ORDER, TFS, type SetupKey } from '../lib/signals';
 import { atrPass } from '../lib/signals';
-import { moves } from '../lib/sim';
+import { moves, tpSlPrices } from '../lib/sim';
 import { base, fmtCompact, fmtNum, fmtPct, fmtPrice, fmtTime } from '../lib/format';
 import { beep, systemNotify } from '../lib/notify';
 import { useApp } from '../store/app';
@@ -17,10 +17,10 @@ export async function doScan() {
   try {
     const result = await runScan((done, total) => set({ scan: { ...useApp.getState().scan, done, total } }));
     set({ scan: { status: 'done', done: result.rows.length, total: result.rows.length, result } });
-    const n3 = result.rows.filter((r) => r.setup?.key === '3TF').length;
+    const n3 = result.rows.filter((r) => r.setup?.key === 'GOLD').length;
     const s = useApp.getState().book.settings;
     if (s.sound) beep('info');
-    if (s.notify && n3) systemNotify('Scan selesai', `${n3} koin 3TF Sepakat`);
+    if (s.notify && n3) systemNotify('Scan selesai', `${n3} koin ⭐ Golden`);
     if (result.failed.length) useApp.getState().toast(`${result.failed.length} koin gagal dimuat: ${result.failed.slice(0, 5).join(', ')}`, 'bad');
   } catch (e) {
     set({ scan: { ...useApp.getState().scan, status: 'error', error: (e as Error).message } });
@@ -74,10 +74,14 @@ function CoinCard({ row }: { row: ScanRow }) {
     if (settings.filters.atr && !atrPass(grid.v.atrPct, moves(settings.leverage).sl * 100)) failed.push('ATR');
   }
   const conflict = btc && row.symbol !== 'BTCUSDT' && btcConflict(btc.trend, setup.dir);
+  const entry = live ?? row.price;
+  const lv = tpSlPrices(setup.dir, entry, settings.leverage);
+  const m = moves(settings.leverage);
+  const sign = setup.dir === 'LONG' ? 1 : -1;
   return (
-    <button onClick={() => open(row.symbol)} className={`card w-full p-3 text-left transition hover:border-accent/60 ${failed.length ? 'opacity-60' : ''}`}>
+    <button onClick={() => open(row.symbol)} className={`card w-full p-3 text-left transition hover:border-accent/60 ${setup.key === 'GOLD' ? 'border-accent/70 ring-1 ring-accent/30' : ''} ${failed.length ? 'opacity-60' : ''}`}>
       <div className="flex items-center gap-2">
-        <div className="text-base font-bold">{base(row.symbol)}</div>
+        <div className="text-base font-bold">{setup.key === 'GOLD' && <span title="Golden: 4H + 1H + 15M qualify semua">⭐ </span>}{base(row.symbol)}</div>
         <DirBadge dir={setup.dir} />
         <div className="ml-auto">
           <WinratePill pct={wr?.pct ?? null} n={wr?.coin.n} />
@@ -89,17 +93,38 @@ function CoinCard({ row }: { row: ScanRow }) {
         <span className="ml-auto text-[11px] text-mute">vol {fmtCompact(row.quoteVolume)}</span>
       </div>
       <div className="mt-2 flex flex-wrap gap-1">
-        {TFS.map((tf) => {
+        {(['4h', '1h', '15m'] as const).map((tf) => {
           const s = row.tf[tf];
-          const q = s?.qualifies && s.dir === setup.dir;
+          const same = s?.dir === setup.dir;
+          const q = same && s?.qualifies;
           return (
-            <span key={tf} className={`chip ${q ? 'bg-accent/15 text-accent' : 'bg-panel2 text-mute'}`}>
-              {q ? '✓' : '·'} {tf}
+            <span
+              key={tf}
+              title={q ? 'qualify penuh' : same ? 'arah searah, belum qualify penuh' : 'tidak searah'}
+              className={`chip ${q ? 'bg-accent/15 text-accent' : same ? 'bg-warn/10 text-warn' : 'bg-panel2 text-mute line-through'}`}
+            >
+              {q ? '✓' : same ? '~' : '✗'} {tf}
             </span>
           );
         })}
         <span className="chip bg-panel2 text-mute">RSI {fmtNum(grid?.v.rsi, 0)}</span>
         <span className="chip bg-panel2 text-mute">ADX {fmtNum(grid?.v.adx, 0)}</span>
+      </div>
+      <div className="mt-2 grid grid-cols-3 gap-1 rounded-lg bg-panel2 px-2 py-1.5 text-[11px] num">
+        <div>
+          <div className="text-mute">Entry</div>
+          <div className="font-semibold">{fmtPrice(entry)}</div>
+        </div>
+        <div>
+          <div className="text-mute">TP</div>
+          <div className="font-semibold text-up">{fmtPrice(lv.tp)}</div>
+          <div className="text-[10px] text-mute">{fmtPct(sign * m.tp * 100, 2, true)}</div>
+        </div>
+        <div>
+          <div className="text-mute">SL</div>
+          <div className="font-semibold text-down">{fmtPrice(lv.sl)}</div>
+          <div className="text-[10px] text-mute">{fmtPct(-sign * m.sl * 100, 2, true)}</div>
+        </div>
       </div>
       {(conflict || failed.length > 0) && (
         <div className="mt-2 space-y-0.5 text-[11px]">
@@ -108,6 +133,32 @@ function CoinCard({ row }: { row: ScanRow }) {
         </div>
       )}
     </button>
+  );
+}
+
+function LeverageBar() {
+  const lev = useApp((s) => s.book.settings.leverage);
+  const update = useApp((s) => s.updateSettings);
+  const m = moves(lev);
+  const set = (v: number) => update({ leverage: Math.max(1, Math.min(125, Math.round(v) || 1)) });
+  return (
+    <div className="card flex flex-wrap items-center gap-x-3 gap-y-2 p-3">
+      <span className="label">Leverage</span>
+      <div className="flex items-center gap-1">
+        <input className="input w-16 !py-1 text-right" inputMode="numeric" aria-label="Leverage" value={lev} onChange={(e) => set(+e.target.value)} />
+        <span className="text-sm">×</span>
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {[5, 10, 15, 20, 25, 50].map((v) => (
+          <button key={v} className={`chip ${v === lev ? 'bg-accent text-black' : 'bg-panel2 text-mute hover:text-ink'}`} onClick={() => set(v)}>
+            {v}×
+          </button>
+        ))}
+      </div>
+      <span className="text-xs text-mute">
+        TP ±{fmtNum(m.tp * 100, 2)}% · SL ±{fmtNum(m.sl * 100, 2)}% dari entry · winrate ikut dihitung ulang
+      </span>
+    </div>
   );
 }
 
@@ -131,10 +182,11 @@ export function ScannerPage() {
           {scan.status === 'running' ? `Scanning… ${scan.done}/${scan.total || 40}` : '⚡ Scan Now'}
         </button>
         <div className="text-xs text-mute">
-          Top 40 USDT-M Perp Binance · 15M / 1H / 4H · candle yang sudah close
+          Top 40 USDT-M Perp Binance · 15M / 1H / 4H · candle yang sudah close · ✓ qualify penuh · ~ searah · ✗ berlawanan
           {scan.result && <div>Scan terakhir {fmtTime(scan.result.at)} · {total} koin qualify · winrate dihitung di leverage {settings.leverage}×</div>}
         </div>
       </div>
+      <LeverageBar />
       {scan.status === 'running' && (
         <div className="h-1.5 overflow-hidden rounded-full bg-panel2">
           <div className="h-full bg-accent transition-all" style={{ width: `${scan.total ? (scan.done / scan.total) * 100 : 3}%` }} />

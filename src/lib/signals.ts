@@ -119,16 +119,22 @@ export function evalTF(s: Series, i: number): TFState | null {
 }
 
 // ---- Grup setup ----
-export type SetupKey = '3TF' | '1H4H' | '15M1H' | 'S15M' | 'S1H' | 'S4H';
-export const SETUP_INFO: Record<SetupKey, { label: string; short: string; grid: TF; tfs: TF[]; rank: number }> = {
-  '3TF': { label: '⭐ 3TF Sepakat', short: '3TF', grid: '15m', tfs: ['15m', '1h', '4h'], rank: 6 },
-  '1H4H': { label: '★ 1H + 4H', short: '1H+4H', grid: '1h', tfs: ['1h', '4h'], rank: 5 },
-  '15M1H': { label: '15M + 1H', short: '15M+1H', grid: '15m', tfs: ['15m', '1h'], rank: 4 },
-  S4H: { label: 'Hanya 4H', short: '4H', grid: '4h', tfs: ['4h'], rank: 3 },
-  S1H: { label: 'Hanya 1H', short: '1H', grid: '1h', tfs: ['1h'], rank: 2 },
-  S15M: { label: 'Hanya 15M', short: '15M', grid: '15m', tfs: ['15m'], rank: 1 },
+// ⭐ Golden  = 4H, 1H, 15M semuanya QUALIFY penuh dan arahnya sama.
+// Grup lain = arah tren (EMA9/21) searah di TF-TF itu, minimal satu TF qualify penuh.
+export type SetupKey = 'GOLD' | '3TF' | '1H4H' | '15M1H' | '15M4H' | 'S15M' | 'S1H' | 'S4H';
+export const SETUP_INFO: Record<SetupKey, { label: string; short: string; grid: TF; tfs: TF[]; rank: number; strict?: boolean }> = {
+  GOLD: { label: '⭐ Golden — 4H + 1H + 15M qualify semua', short: '⭐ Golden', grid: '15m', tfs: ['15m', '1h', '4h'], rank: 9, strict: true },
+  '3TF': { label: '3TF searah — 4H + 1H + 15M', short: '3TF searah', grid: '15m', tfs: ['15m', '1h', '4h'], rank: 8 },
+  '1H4H': { label: '4H + 1H searah', short: '4H+1H', grid: '1h', tfs: ['1h', '4h'], rank: 7 },
+  '15M1H': { label: '1H + 15M searah', short: '1H+15M', grid: '15m', tfs: ['15m', '1h'], rank: 6 },
+  '15M4H': { label: '4H + 15M searah', short: '4H+15M', grid: '15m', tfs: ['15m', '4h'], rank: 5 },
+  // grup lama (hanya untuk riwayat trade lama, tidak ditampilkan di scanner)
+  S4H: { label: 'Hanya 4H', short: '4H', grid: '4h', tfs: ['4h'], rank: 1, strict: true },
+  S1H: { label: 'Hanya 1H', short: '1H', grid: '1h', tfs: ['1h'], rank: 1, strict: true },
+  S15M: { label: 'Hanya 15M', short: '15M', grid: '15m', tfs: ['15m'], rank: 1, strict: true },
 };
-export const SETUP_ORDER: SetupKey[] = ['3TF', '1H4H', '15M1H', 'S4H', 'S1H', 'S15M'];
+export const SETUP_ORDER: SetupKey[] = ['GOLD', '3TF', '1H4H', '15M1H', '15M4H'];
+export const setupShort = (k: string) => SETUP_INFO[k as SetupKey]?.short ?? k;
 
 export type Setup = { key: SetupKey; dir: Dir };
 
@@ -143,15 +149,18 @@ export function classify(st: Partial<Record<TF, TFState | null>>): Setup | null 
 
 /** Apakah kondisi setup terpenuhi (non-eksklusif) — dipakai juga oleh backtest. */
 export function setupHolds(key: SetupKey, st: Partial<Record<TF, TFState | null>>): Dir | null {
-  const tfs = SETUP_INFO[key].tfs;
+  const info = SETUP_INFO[key];
   let dir: Dir | null = null;
-  for (const tf of tfs) {
+  let anyQualify = false;
+  for (const tf of info.tfs) {
     const s = st[tf];
-    if (!s || !s.qualifies || !s.dir) return null;
+    if (!s || !s.dir) return null;
     if (dir && s.dir !== dir) return null;
+    if (info.strict && !s.qualifies) return null;
     dir = s.dir;
+    if (s.qualifies) anyQualify = true;
   }
-  return dir;
+  return anyQualify ? dir : null;
 }
 
 // ---- Filter tambahan ----

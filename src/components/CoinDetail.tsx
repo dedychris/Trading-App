@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { getDerivatives, type Derivs } from '../lib/binance';
 import { filterComparison } from '../lib/backtest';
 import { loadSymbolSeries, statesFrom } from '../lib/scanner';
-import { btcConflict, classify, FILTER_INFO, RULES, sentimentPass, SETUP_INFO, TFS, type Dir, type TF } from '../lib/signals';
+import { btcConflict, classify, FILTER_INFO, RULES, sentimentPass, setupShort, TFS, type Dir, type TF } from '../lib/signals';
 import { estMaxLeverage, previewOrder } from '../lib/sim';
 import { base, fmtNum, fmtPct, fmtPrice, fmtUsd } from '../lib/format';
 import { availableBalance, marginFor, openPosition, placeLimit, useApp, validateOrder } from '../store/app';
@@ -38,7 +38,7 @@ export function CoinDetail({ symbol }: { symbol: string }) {
           <span className="text-lg font-bold">{base(symbol)}</span>
           <span className="text-xs text-mute">USDT Perp</span>
           {setup && <DirBadge dir={setup.dir} />}
-          {setup && <span className="chip bg-accent/15 text-accent">{SETUP_INFO[setup.key].short}</span>}
+          {setup && <span className="chip bg-accent/15 text-accent">{setupShort(setup.key)}</span>}
           <span className="num ml-auto text-sm sm:ml-2">{fmtPrice(price)}</span>
         </div>
       }
@@ -166,7 +166,7 @@ function FilterCompare({ symbol }: { symbol: string }) {
   const pct = (x: { pool: { wins: number; n: number } }) => (x.pool.n ? fmtPct((x.pool.wins / x.pool.n) * 100, 0) : '—');
   return (
     <div className="card p-3">
-      <div className="label mb-1">Indikator mana yang berguna? (backtest {SETUP_INFO[setup.key].short} {setup.dir}, {lev}×)</div>
+      <div className="label mb-1">Indikator mana yang berguna? (backtest {setupShort(setup.key)} {setup.dir}, {lev}×)</div>
       <div className="mb-2 text-xs text-mute">Winrate gabungan 40 koin dengan dan tanpa tiap filter. Kalau angkanya naik, filternya berguna.</div>
       <table className="w-full text-sm num">
         <tbody>
@@ -325,7 +325,7 @@ function OrderForm({ symbol, price, defaultDir, states, derivs }: { symbol: stri
             <div>Koin ini: <span className="num text-ink">{wr.coin.n ? `${wr.coin.wins}/${wr.coin.n} (${fmtPct((wr.coin.wins / wr.coin.n) * 100, 0)})` : 'belum ada kejadian'}</span></div>
             <div>Gabungan 40 koin: <span className="num text-ink">{wr.pool.n ? `${wr.pool.wins}/${wr.pool.n} (${fmtPct((wr.pool.wins / wr.pool.n) * 100, 0)})` : '—'}</span></div>
             <div>Metode: {wr.method === 'koin' ? 'data koin ini (sampel ≥ 20)' : wr.method === 'campuran' ? 'campuran — sampel koin < 20, ditarik ke rata-rata gabungan' : wr.method === 'gabungan' ? 'gabungan (koin ini belum pernah)' : '—'} · histori ±{wr.periodDays} hari</div>
-            <div>Trade lu ({SETUP_INFO[key].short} {dir}): <span className="num text-ink">{mine.n ? `${mine.w}/${mine.n} (${fmtPct((mine.w / mine.n) * 100, 0)})` : 'belum ada'}</span></div>
+            <div>Trade lu ({setupShort(key)} {dir}): <span className="num text-ink">{mine.n ? `${mine.w}/${mine.n} (${fmtPct((mine.w / mine.n) * 100, 0)})` : 'belum ada'}</span></div>
             {pv && wr.pct !== null && (
               <div className={wr.pct >= pv.breakevenWinrate ? 'text-up' : 'text-down'}>
                 {wr.pct >= pv.breakevenWinrate ? '✓ Di atas winrate impas' : '✗ Di bawah winrate impas — secara statistik rugi'}

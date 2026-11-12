@@ -5,7 +5,10 @@ Paper trading semi-otomatis untuk **Binance Futures USDⓈ-M**: data **100% live
 > Ini simulasi buat belajar & menguji strategi. Winrate = statistik histori, bukan jaminan profit.
 
 ## Fitur
-- **Scanner**: tombol Scan Now, top 40 koin USDT-M Perp berdasarkan volume. Analisa 15M/1H/4H (EMA9/21, RSI14, MACD, ADX14 Wilder), semua yang qualify ditampilkan per grup: ⭐ 3TF Sepakat, ★ 1H+4H, 15M+1H, dan satu TF.
+- **Scanner**: tombol Scan Now, top 40 koin USDT-M Perp berdasarkan volume. Analisa 15M/1H/4H (EMA9/21, RSI14, MACD, ADX14 Wilder). Grup:
+  - ⭐ **Golden**: 4H + 1H + 15M qualify penuh semua, arah sama.
+  - **3TF searah**, **4H+1H searah**, **1H+15M searah**, **4H+15M searah**: arah tren (EMA9/21) sama di TF itu, minimal satu TF qualify penuh. Chip TF: ✓ qualify penuh · ~ searah · ✗ berlawanan.
+  - Tiap kartu langsung menampilkan **Entry (harga live), TP, SL** di leverage yang dipilih lewat input leverage cepat di atas daftar.
   - RSI LONG 40–65, SHORT 35–60. Sinyal dihitung dari candle yang sudah close.
 - **Konteks BTC**: peringatan ⚠️ kalau LONG altcoin saat BTC bearish (dan sebaliknya).
 - **Winrate (opsi C + D)**: per koin kalau ≥ 20 kejadian, kalau kurang ditarik ke rata-rata gabungan 40 koin. Dihitung ulang tiap ganti leverage. TP & SL di candle yang sama = kalah. Ditambah winrate trade lu sendiri.
