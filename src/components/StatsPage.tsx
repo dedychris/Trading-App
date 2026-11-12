@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { insights } from '../lib/audit';
+import { allPatterns, MIN_PATTERN_N, patternText } from '../lib/patterns';
 import { fmtPct, fmtUsd } from '../lib/format';
 import { SETUP_INFO, SETUP_ORDER } from '../lib/signals';
 import { START_BALANCE } from '../lib/sim';
@@ -53,6 +54,7 @@ export function StatsPage() {
       maxDd,
       bySetup,
       tips: insights(book),
+      patterns: allPatterns(book),
     };
   }, [book]);
   const wallet = walletBalance(book);
@@ -87,6 +89,30 @@ export function StatsPage() {
           </table>
         </div>
       )}
+      <div className="grid gap-4 md:grid-cols-2">
+        {(['best', 'worst'] as const).map((kind) => {
+          const rows = s.patterns[kind];
+          return (
+            <div key={kind} className="card p-3">
+              <div className={`label mb-2 ${kind === 'best' ? '!text-up' : '!text-down'}`}>{kind === 'best' ? '✅ Pola terbaik lu — ulangi' : '⚠️ Pola terburuk lu — hindari'}</div>
+              {rows.length ? (
+                <table className="w-full text-sm">
+                  <tbody>
+                    {rows.map((r, i) => (
+                      <tr key={i} className="border-b border-line last:border-0">
+                        <td className="py-1.5 pr-2">{patternText(r)}</td>
+                        <td className="num whitespace-nowrap text-right">{kind === 'best' ? `TP ${r.wins}/${r.n}` : `SL ${r.n - r.wins}/${r.n}`}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="text-sm text-mute">Belum ada. Pola baru dihitung setelah kondisi yang sama terjadi minimal {MIN_PATTERN_N} kali ({s.patterns.total} trade selesai).</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
       <div className="card p-3">
         <div className="label mb-2">Pola dari trade lu</div>
         {s.tips.length ? (

@@ -8,6 +8,7 @@ import { beep, systemNotify } from '../lib/notify';
 import { useApp } from '../store/app';
 import { DirBadge, Empty, Signed, WinratePill } from './ui';
 import { useWinrate } from './hooks';
+import { PatternAlert } from './PatternAlert';
 
 export async function doScan() {
   const set = useApp.setState;
@@ -132,6 +133,9 @@ function CoinCard({ row }: { row: ScanRow }) {
           {failed.length > 0 && <div className="text-mute">✗ Tidak lolos filter: {failed.join(', ')}</div>}
         </div>
       )}
+      <div className="mt-1.5">
+        <PatternAlert compact symbol={row.symbol} setupKey={setup.key} dir={setup.dir} tf={row.tf} leverage={settings.leverage} />
+      </div>
     </button>
   );
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { auditTrade } from '../lib/audit';
+import { matchPatterns, positionFeatures, patternText } from '../lib/patterns';
 import { base, fmtDuration, fmtPct, fmtPrice, fmtTime, fmtUsd } from '../lib/format';
 import { setupShort } from '../lib/signals';
 import { useApp } from '../store/app';
@@ -49,6 +50,8 @@ function TradeRow({ p, book }: { p: Position; book: Book }) {
   const [open, setOpen] = useState(false);
   const l = positionLedger(book, p.id);
   const audit = open ? auditTrade(p) : [];
+  const feats = open ? positionFeatures(p) : [];
+  const pat = open ? matchPatterns(feats, book) : null;
   const reasonTone = p.reason === 'TP' ? 'bg-up/15 text-up' : p.reason === 'MANUAL' ? 'bg-panel2 text-mute' : 'bg-down/15 text-down';
   return (
     <div className="card">
@@ -91,6 +94,17 @@ function TradeRow({ p, book }: { p: Position; book: Book }) {
                 </li>
               ))}
             </ul>
+            <div className="mt-3 rounded-lg bg-panel2 p-2 text-xs">
+              <div className="label mb-1">Pola trade ini (disimpan)</div>
+              <div className="flex flex-wrap gap-1">
+                {feats.map((f) => (
+                  <span key={f.k} className="chip bg-panel text-mute">{f.label}</span>
+                ))}
+              </div>
+              {pat?.bad && <div className="mt-1.5 text-down">⚠️ Pola yang sering kena SL: {patternText(pat.bad)} — SL {pat.bad.n - pat.bad.wins} dari {pat.bad.n} kali. Hindari pola ini.</div>}
+              {pat?.good && <div className="mt-1 text-up">✅ Pola yang sering kena TP: {patternText(pat.good)} — TP {pat.good.wins} dari {pat.good.n} kali. Ulangi pola ini.</div>}
+              {!pat?.bad && !pat?.good && <div className="mt-1.5 text-mute">Peringatan pola muncul setelah kondisi yang sama terjadi minimal 3 kali.</div>}
+            </div>
             {!p.snapExit && <div className="mt-1 text-[11px] text-mute">Snapshot indikator saat exit belum tersedia.</div>}
           </div>
         </div>

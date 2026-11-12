@@ -11,6 +11,7 @@ import type { SymbolSeries } from '../lib/backtest';
 import { PriceChart } from './Chart';
 import { DirBadge, Modal, Signed, WinratePill } from './ui';
 import { useMyWinrate, useWinrate } from './hooks';
+import { PatternAlert } from './PatternAlert';
 
 export function CoinDetail({ symbol }: { symbol: string }) {
   const close = () => useApp.getState().openDetail(null);
@@ -337,6 +338,7 @@ function OrderForm({ symbol, price, defaultDir, states, derivs }: { symbol: stri
         )}
       </div>
 
+      <PatternAlert symbol={symbol} setupKey={key ?? null} dir={dir} tf={states} leverage={lev} />
       <div className="space-y-1 text-xs">
         {conflict && <div className="text-warn">⚠️ BTC sedang {btc!.trend} — {dir} melawan arah BTC.</div>}
         {slTight && <div className="text-warn">⚠️ Jarak SL {fmtNum(pv!.slMovePct, 2)}% lebih sempit dari ATR 15m ({fmtNum(g15!.v.atrPct, 2)}%). Rawan kena SL karena goyangan biasa — pertimbangkan leverage ≤ {Math.max(1, Math.floor(7 / g15!.v.atrPct))}×.</div>}

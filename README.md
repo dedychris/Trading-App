@@ -17,6 +17,7 @@ Paper trading semi-otomatis untuk **Binance Futures USDⓈ-M**: data **100% live
 - **Simulasi realistis**: fee Binance (taker 0,05%, maker 0,02%, diskon BNB −10% on/off), funding fee pakai rate asli Binance, TP/SL/likuidasi dicek pakai harga live + candle 1 menit saat app dibuka lagi.
 - **Posisi** (PnL live, tutup manual, boleh dobel posisi di koin yang sama) + **Order Pending**.
 - **Riwayat + Audit**: snapshot indikator saat entry & exit, analisa kenapa menang/kalah. Export CSV.
+- **Belajar dari pola**: tiap trade menyimpan pola kondisi saat entry (setup, arah, BTC, ADX, RSI, volume, SL vs ATR, leverage). Kalau sinyal baru mirip pola yang ≥ 3 kali sering kena SL, muncul peringatan ⚠️; kalau mirip pola yang sering kena TP, ditandai ✅. Hanya peringatan, tidak memblokir order.
 - **Statistik**: grafik saldo, winrate asli, rata-rata profit/rugi, profit factor, drawdown, total fee & funding, pola dari trade lu.
 - **Pengaturan**: mode terang/gelap, alert suara & notifikasi, reset saldo ke 10.000 USDT.
 
