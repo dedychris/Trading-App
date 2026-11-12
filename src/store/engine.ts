@@ -1,6 +1,6 @@
 // Mesin simulasi: pantau harga live, eksekusi TP/SL/likuidasi & order limit,
 // hitung funding asli Binance, dan cek ulang candle 1m saat app dibuka lagi (opsi A).
-import { getFundingHistory, getKlinesRange, subscribePrices } from '../lib/binance';
+import { getFundingHistory, getKlinesRange, subscribePrices, subscribeTrades } from '../lib/binance';
 import { fmtUsd } from '../lib/format';
 import { beep, systemNotify } from '../lib/notify';
 import { analyzeSymbol } from '../lib/scanner';
@@ -73,16 +73,21 @@ export function manualClose(id: string) {
   if (closed) finalizeClose(closed);
 }
 
-function onPrices(prices: Record<string, number>) {
+type Tick = { h: number; l: number; c: number };
+
+/** Terapkan harga baru: update state, cek order limit & TP/SL/likuidasi pakai high/low batch. */
+function applyTicks(ticks: Record<string, Tick>) {
   const st = useApp.getState();
-  useApp.setState({ prices: { ...st.prices, ...prices } });
+  const last: Record<string, number> = {};
+  for (const [s, t] of Object.entries(ticks)) last[s] = t.c;
+  useApp.setState({ prices: { ...st.prices, ...last } });
   const book = useApp.getState().book;
   const now = Date.now();
   for (const o of Object.values(book.orders)) {
     if (o.status !== 'pending') continue;
-    const px = prices[o.symbol];
-    if (px === undefined) continue;
-    if ((o.dir === 'LONG' && px <= o.price) || (o.dir === 'SHORT' && px >= o.price)) {
+    const t = ticks[o.symbol];
+    if (!t) continue;
+    if ((o.dir === 'LONG' && t.l <= o.price) || (o.dir === 'SHORT' && t.h >= o.price)) {
       const pos = fillOrder(o.id, now);
       if (pos) {
         const s = useApp.getState().book.settings;
@@ -95,14 +100,76 @@ function onPrices(prices: Record<string, number>) {
   }
   for (const p of Object.values(useApp.getState().book.positions)) {
     if (p.status !== 'open') continue;
-    const px = prices[p.symbol];
-    if (px === undefined) continue;
-    const h = hit(p, px, px);
+    const t = ticks[p.symbol];
+    if (!t) continue;
+    const h = hit(p, t.h, t.l);
     if (h) {
       const closed = closePosition(p.id, h.price, h.reason, now);
       if (closed) finalizeClose(closed);
     }
   }
+}
+
+// --- jalur cepat (aggTrade): ditampung lalu di-flush tiap 100 ms supaya layar tidak berat ---
+const FLUSH_MS = 100;
+const lastFastAt: Record<string, number> = {};
+let buf: Record<string, Tick> = {};
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function onTrade(symbol: string, px: number) {
+  lastFastAt[symbol] = Date.now();
+  const t = buf[symbol];
+  buf[symbol] = t ? { h: Math.max(t.h, px), l: Math.min(t.l, px), c: px } : { h: px, l: px, c: px };
+  if (!flushTimer) flushTimer = setTimeout(flushTrades, FLUSH_MS);
+}
+
+export function flushTrades() {
+  if (flushTimer) clearTimeout(flushTimer);
+  flushTimer = null;
+  const b = buf;
+  buf = {};
+  if (Object.keys(b).length) applyTicks(b);
+}
+
+/** Jalur lambat (miniTicker semua koin, ±1×/detik). Koin yang jalur cepatnya sehat dilewati
+ *  supaya harga tidak mundur ke nilai yang lebih lama. */
+export function onPrices(prices: Record<string, number>) {
+  const now = Date.now();
+  const ticks: Record<string, Tick> = {};
+  for (const [s, px] of Object.entries(prices)) {
+    if (now - (lastFastAt[s] ?? 0) < 5000) continue;
+    ticks[s] = { h: px, l: px, c: px };
+  }
+  applyTicks(ticks);
+}
+
+/** Koin yang perlu harga realtime: ada posisi terbuka, order pending, atau sedang dibuka detailnya. */
+export function fastSymbols(): string[] {
+  const { book, detail } = useApp.getState();
+  const set = new Set<string>();
+  for (const p of Object.values(book.positions)) if (p.status === 'open') set.add(p.symbol);
+  for (const o of Object.values(book.orders)) if (o.status === 'pending') set.add(o.symbol);
+  if (detail) set.add(detail);
+  return [...set].sort();
+}
+
+function startFastFeed(): () => void {
+  let key = '';
+  let unsub = () => {};
+  const sync = () => {
+    const syms = fastSymbols();
+    const k = syms.join(',');
+    if (k === key) return;
+    key = k;
+    unsub();
+    unsub = subscribeTrades(syms, onTrade);
+  };
+  sync();
+  const off = useApp.subscribe(sync);
+  return () => {
+    off();
+    unsub();
+  };
 }
 
 let catchingUp = false;
@@ -193,7 +260,13 @@ export async function applyFunding(onlyIds?: string[]) {
 let stop: (() => void) | null = null;
 export function startEngine() {
   if (stop) return;
-  const unsub = subscribePrices(onPrices, (s) => useApp.setState({ priceStatus: s }));
+  const unsubSlow = subscribePrices(onPrices, (s) => useApp.setState({ priceStatus: s }));
+  const unsubFast = startFastFeed();
+  const unsub = () => {
+    unsubSlow();
+    unsubFast();
+    flushTrades();
+  };
   catchUp().then(() => applyFunding().catch(() => {}));
   const iv = setInterval(() => {
     applyFunding().catch(() => {});

@@ -291,3 +291,56 @@ export function subscribePrices(onPrices: (p: Record<string, number>) => void, o
     onStatus('off');
   };
 }
+
+/**
+ * Harga per-trade (aggTrade) untuk beberapa koin saja — realtime, bisa puluhan update/detik.
+ * Dipakai untuk koin yang ada posisi / order / sedang dibuka, di samping miniTicker semua-koin.
+ */
+export function subscribeTrades(symbols: string[], onTrade: (symbol: string, price: number) => void): () => void {
+  if (!symbols.length) return () => {};
+  let ws: WebSocket | null = null;
+  let retry: ReturnType<typeof setTimeout> | null = null;
+  let closed = false;
+  let failures = 0;
+  const url = `wss://fstream.binance.com/stream?streams=${symbols.map((s) => `${s.toLowerCase()}@aggTrade`).join('/')}`;
+  const connect = () => {
+    retry = null;
+    if (closed) return;
+    let sock: WebSocket;
+    try {
+      sock = new WebSocket(url);
+    } catch {
+      return;
+    }
+    ws = sock;
+    sock.onopen = () => {
+      failures = 0;
+    };
+    sock.onmessage = (ev) => {
+      try {
+        const m = JSON.parse(ev.data as string) as { data?: { s: string; p: string } };
+        if (m.data) onTrade(m.data.s, +m.data.p);
+      } catch {
+        /* abaikan */
+      }
+    };
+    sock.onclose = () => {
+      if (closed || ws !== sock) return;
+      ws = null;
+      failures++;
+      retry = setTimeout(connect, Math.min(60_000, 2000 * failures));
+    };
+    sock.onerror = () => sock.close();
+  };
+  connect();
+  return () => {
+    closed = true;
+    if (retry) clearTimeout(retry);
+    const old = ws;
+    ws = null;
+    if (old) {
+      old.onopen = old.onmessage = old.onclose = old.onerror = null;
+      old.close();
+    }
+  };
+}

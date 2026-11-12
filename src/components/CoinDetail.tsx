@@ -10,7 +10,7 @@ import type { Snapshot } from '../store/types';
 import type { SymbolSeries } from '../lib/backtest';
 import { PriceChart } from './Chart';
 import { DirBadge, Modal, Signed, WinratePill } from './ui';
-import { useActiveFilters, useMyWinrate, useWinrate } from './hooks';
+import { useActiveFilters, useFlash, useMyWinrate, useWinrate } from './hooks';
 import { PatternAlert } from './PatternAlert';
 
 export function CoinDetail({ symbol }: { symbol: string }) {
@@ -21,6 +21,7 @@ export function CoinDetail({ symbol }: { symbol: string }) {
   const [derivs, setDerivs] = useState<Derivs | null>(null);
   const [chartTf, setChartTf] = useState<TF>('1h');
   const live = useApp((s) => s.prices[symbol]);
+  const fl = useFlash(live);
 
   useEffect(() => {
     if (!series) loadSymbolSeries(symbol).then(setSeries).catch((e) => setErr((e as Error).message));
@@ -40,7 +41,7 @@ export function CoinDetail({ symbol }: { symbol: string }) {
           <span className="text-xs text-mute">USDT Perp</span>
           {setup && <DirBadge dir={setup.dir} />}
           {setup && <span className="chip bg-accent/15 text-accent">{setupShort(setup.key)}</span>}
-          <span className="num ml-auto text-sm sm:ml-2">{fmtPrice(price)}</span>
+          <span key={fl.key} className={`num ml-auto px-0.5 text-sm sm:ml-2 ${fl.cls}`}>{fmtPrice(price)}</span>
         </div>
       }
     >

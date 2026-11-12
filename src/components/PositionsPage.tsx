@@ -7,6 +7,7 @@ import { positionLedger } from '../store/book';
 import { manualClose } from '../store/engine';
 import type { Position } from '../store/types';
 import { DirBadge, Empty, Signed } from './ui';
+import { useFlash } from './hooks';
 
 function PositionCard({ p }: { p: Position }) {
   const px = useApp((s) => s.prices[p.symbol]);
@@ -16,6 +17,8 @@ function PositionCard({ p }: { p: Position }) {
   const led = positionLedger(book, p.id);
   const u = px ? pnl(p.dir, p.entry, px, p.qty) : 0;
   const roe = (u / p.margin) * 100;
+  const fPx = useFlash(px);
+  const fU = useFlash(px ? u : null);
   const toTp = px ? (Math.abs(p.tp - px) / px) * 100 : null;
   const toSl = px ? (Math.abs(p.sl - px) / px) * 100 : null;
   // posisi harga di antara SL (0%) dan TP (100%)
@@ -33,7 +36,7 @@ function PositionCard({ p }: { p: Position }) {
       <div className="mt-2 flex items-end justify-between gap-2">
         <div>
           <div className="text-[11px] text-mute">PnL belum terealisasi</div>
-          <Signed v={u} className="text-xl font-bold">{fmtUsd(u, true)}</Signed>
+          <span key={fU.key} className={`inline-block px-0.5 ${fU.cls}`}><Signed v={u} className="text-xl font-bold">{fmtUsd(u, true)}</Signed></span>
           <Signed v={roe} className="ml-2 text-sm">{fmtPct(roe, 2, true)}</Signed>
         </div>
         <div className="text-right text-xs text-mute num">
@@ -64,7 +67,7 @@ function PositionCard({ p }: { p: Position }) {
       ) : null}
       <div className="mt-2 grid grid-cols-4 gap-2 text-[11px] num">
         <div><div className="text-mute">Entry</div>{fmtPrice(p.entry)}</div>
-        <div><div className="text-mute">Harga</div>{fmtPrice(px)}</div>
+        <div><div className="text-mute">Harga</div><span key={fPx.key} className={`-mx-0.5 inline-block px-0.5 ${fPx.cls}`}>{fmtPrice(px)}</span></div>
         <div><div className="text-mute">Margin</div>{fmtUsd(p.margin)}</div>
         <div><div className="text-mute">Likuidasi</div><span className="text-warn">{fmtPrice(p.liq)}</span></div>
       </div>
