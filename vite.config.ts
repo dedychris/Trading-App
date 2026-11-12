@@ -1,6 +1,6 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
-import { handleBinance } from './server/binanceProxy';
+import { handleBinance } from './api/binance';
 
 // Di lokal, /api/binance dilayani langsung oleh dev server (meniru Vercel function).
 function binanceDevProxy(): Plugin {

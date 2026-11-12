@@ -27,15 +27,22 @@ async function raw(path: string, params: Record<string, string | number | undefi
       const r = await fetch(`/api/binance?${p}`);
       const ct = r.headers.get('content-type') || '';
       if (r.ok && ct.includes('json')) return r.json();
-      if (r.status === 404 || !ct.includes('json')) {
-        mode = 'direct';
+      if (r.status === 404 && !ct.includes('json')) {
+        mode = 'direct'; // tidak ada proxy (misal hosting statis) → coba langsung
       } else {
-        const body = await r.json().catch(() => ({}));
-        throw new BinanceError(`Binance error (${r.status}): ${(body as { error?: string }).error ?? 'unknown'}`);
+        const text = await r.text().catch(() => '');
+        let msg = text.slice(0, 160);
+        try {
+          const j = JSON.parse(text) as { error?: string; status?: number; body?: string };
+          msg = [j.error, j.status, j.body?.slice(0, 120)].filter(Boolean).join(' · ');
+        } catch {
+          /* bukan JSON */
+        }
+        throw new BinanceError(`Proxy /api/binance error ${r.status}: ${msg || 'tanpa pesan'}`);
       }
     } catch (e) {
       if (e instanceof BinanceError) throw e;
-      mode = 'direct';
+      throw new BinanceError(`Proxy /api/binance tidak bisa dihubungi: ${String(e)}`);
     }
   }
   const r = await fetch(`https://fapi.binance.com${path}${qs.toString() ? `?${qs}` : ''}`).catch((e) => {

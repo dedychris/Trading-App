@@ -49,7 +49,6 @@ Catatan: project Supabase gratis di-pause kalau 7 hari tidak dipakai sama sekali
 ## Struktur
 ```
 api/binance.ts          Vercel function (proxy Binance, region Tokyo)
-server/binanceProxy.ts  logika proxy (dipakai juga oleh dev server)
 src/lib/indicators.ts   EMA, RSI, MACD, ADX, ATR, Bollinger (rumus standar)
 src/lib/signals.ts      aturan sinyal, grup setup, filter
 src/lib/backtest.ts     mesin winrate dari data historis
