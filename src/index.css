@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: 244 246 245;
+  --panel: 255 255 255;
+  --panel2: 236 240 238;
+  --line: 218 224 221;
+  --ink: 17 24 21;
+  --mute: 98 112 106;
+  --accent: 0 158 96;
+  --up: 0 150 90;
+  --down: 214 51 64;
+  --warn: 196 120 0;
+  color-scheme: light;
+}
+.dark {
+  --bg: 8 11 10;
+  --panel: 17 22 20;
+  --panel2: 25 32 29;
+  --line: 38 48 44;
+  --ink: 230 238 234;
+  --mute: 134 150 143;
+  --accent: 0 230 140;
+  --up: 0 214 130;
+  --down: 255 82 96;
+  --warn: 255 184 46;
+  color-scheme: dark;
+}
+
+html, body { background: rgb(var(--bg)); color: rgb(var(--ink)); }
+body { font-family: Inter, system-ui, sans-serif; -webkit-tap-highlight-color: transparent; overflow-x: hidden; }
+.num { font-family: 'JetBrains Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+@layer components {
+  .card { @apply bg-panel border border-line rounded-xl; }
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition active:scale-[.98] disabled:opacity-50 disabled:pointer-events-none; }
+  .btn-primary { @apply btn bg-accent text-black hover:brightness-110; }
+  .btn-ghost { @apply btn border border-line bg-panel2 hover:border-accent/60; }
+  .btn-up { @apply btn bg-up text-white hover:brightness-110; }
+  .btn-down { @apply btn bg-down text-white hover:brightness-110; }
+  .input { @apply w-full rounded-lg border border-line bg-panel2 px-3 py-2 text-sm outline-none focus:border-accent num; }
+  .label { @apply text-[11px] uppercase tracking-wider text-mute font-semibold; }
+  .chip { @apply inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold; }
+  .seg { @apply flex rounded-lg border border-line bg-panel2 p-0.5; }
+  .seg > button { @apply flex-1 rounded-md px-3 py-1.5 text-sm font-semibold text-mute transition; }
+  .seg > button[data-on='true'] { @apply bg-panel text-ink shadow-sm; }
+}
+
+input[type='range'] { accent-color: rgb(var(--accent)); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+@keyframes pulse-dot { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+.pulse { animation: pulse-dot 1.6s ease-in-out infinite; }
