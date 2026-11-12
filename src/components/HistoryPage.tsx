@@ -12,7 +12,7 @@ export function exportCsv(book: Book) {
   const rows = Object.values(book.positions)
     .filter((p) => p.status === 'closed')
     .sort((a, b) => (a.closedAt ?? 0) - (b.closedAt ?? 0));
-  const head = ['dibuka', 'ditutup', 'koin', 'arah', 'leverage', 'tipe', 'margin', 'entry', 'exit', 'tp', 'sl', 'alasan', 'pnl_kotor', 'fee', 'funding', 'pnl_bersih', 'roe_%', 'setup', 'btc', 'winrate_entry'];
+  const head = ['dibuka', 'ditutup', 'koin', 'arah', 'leverage', 'tipe', 'margin', 'entry', 'exit', 'tp', 'sl', 'alasan', 'auto', 'tp_pct', 'sl_pct', 'trailing_pct', 'profit_tertinggi_pct', 'pnl_kotor', 'fee', 'funding', 'pnl_bersih', 'roe_%', 'setup', 'btc', 'winrate_entry'];
   const lines = rows.map((p) => {
     const l = positionLedger(book, p.id);
     return [
@@ -28,6 +28,11 @@ export function exportCsv(book: Book) {
       p.tp,
       p.sl,
       p.reason,
+      p.auto ? 'ya' : 'tidak',
+      p.tpPct ?? 14,
+      p.slPct ?? 7,
+      p.trailPct ?? '',
+      p.peakRoe?.toFixed(2) ?? '',
       l.pnl.toFixed(4),
       l.fee.toFixed(4),
       l.funding.toFixed(4),
@@ -52,7 +57,7 @@ function TradeRow({ p, book }: { p: Position; book: Book }) {
   const audit = open ? auditTrade(p) : [];
   const feats = open ? positionFeatures(p) : [];
   const pat = open ? matchPatterns(feats, book) : null;
-  const reasonTone = p.reason === 'TP' ? 'bg-up/15 text-up' : p.reason === 'MANUAL' ? 'bg-panel2 text-mute' : 'bg-down/15 text-down';
+  const reasonTone = p.reason === 'TP' || p.reason === 'TRAIL' ? 'bg-up/15 text-up' : p.reason === 'MANUAL' ? 'bg-panel2 text-mute' : 'bg-down/15 text-down';
   return (
     <div className="card">
       <button className="flex w-full items-center gap-2 p-3 text-left" onClick={() => setOpen(!open)}>
@@ -61,7 +66,8 @@ function TradeRow({ p, book }: { p: Position; book: Book }) {
             <span className="font-bold">{base(p.symbol)}</span>
             <DirBadge dir={p.dir} />
             <span className="chip bg-panel2">{p.leverage}×</span>
-            <span className={`chip ${reasonTone}`}>{p.reason}</span>
+            <span className={`chip ${reasonTone}`}>{p.reason === 'TRAIL' ? 'TP ↗ trailing' : p.reason}</span>
+            {p.auto && <span className="chip bg-accent/15 text-accent">🤖 AUTO</span>}
           </div>
           <div className="mt-0.5 text-[11px] text-mute">
             {fmtTime(p.closedAt)} · {fmtDuration((p.closedAt ?? 0) - p.openedAt)}

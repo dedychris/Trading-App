@@ -8,7 +8,7 @@ import type { Book, Position } from '../store/types';
 export const MIN_PATTERN_N = 3;
 export type Feat = { k: string; label: string };
 
-export function features(i: { setupKey?: SetupKey | null; dir: Dir; tf: Partial<Record<TF, TFState | null>>; btcTrend: BtcTrend | null; leverage: number; symbol?: string }): Feat[] {
+export function features(i: { setupKey?: SetupKey | null; dir: Dir; tf: Partial<Record<TF, TFState | null>>; btcTrend: BtcTrend | null; leverage: number; symbol?: string; slPct?: number }): Feat[] {
   const out: Feat[] = [];
   out.push(i.setupKey ? { k: `setup=${i.setupKey}`, label: setupShort(i.setupKey) } : { k: 'setup=none', label: 'tanpa sinyal' });
   out.push({ k: `dir=${i.dir}`, label: i.dir });
@@ -25,7 +25,7 @@ export function features(i: { setupKey?: SetupKey | null; dir: Dir; tf: Partial<
     const edge = i.dir === 'LONG' ? v.rsi > hi - 3 || v.rsi < lo : v.rsi < lo + 3 || v.rsi > hi;
     out.push(edge ? { k: 'rsi=tepi', label: 'RSI di tepi zona' } : { k: 'rsi=tengah', label: 'RSI di tengah zona' });
     if (Number.isFinite(v.volRatio)) out.push(v.volRatio >= RULES.volRatioMin ? { k: 'vol=kuat', label: 'volume kuat' } : { k: 'vol=lemah', label: 'volume lemah' });
-    if (Number.isFinite(v.atrPct)) out.push(moves(i.leverage).sl * 100 >= v.atrPct ? { k: 'atr=ok', label: 'SL ≥ ATR' } : { k: 'atr=sempit', label: 'SL < ATR (sempit)' });
+    if (Number.isFinite(v.atrPct)) out.push(moves(i.leverage, undefined, i.slPct).sl * 100 >= v.atrPct ? { k: 'atr=ok', label: 'SL ≥ ATR' } : { k: 'atr=sempit', label: 'SL < ATR (sempit)' });
   }
   out.push(i.leverage <= 10 ? { k: 'lev=low', label: 'leverage ≤10×' } : i.leverage <= 25 ? { k: 'lev=mid', label: 'leverage 11–25×' } : { k: 'lev=high', label: 'leverage >25×' });
   return out;
@@ -34,12 +34,12 @@ export function features(i: { setupKey?: SetupKey | null; dir: Dir; tf: Partial<
 export function positionFeatures(p: Position): Feat[] {
   const e = p.snapEntry;
   const key = e?.setup && e.setup.dir === p.dir ? (e.setup.key as SetupKey) : null;
-  return features({ setupKey: key, dir: p.dir, tf: e?.tf ?? {}, btcTrend: e?.btcTrend ?? null, leverage: p.leverage, symbol: p.symbol });
+  return features({ setupKey: key, dir: p.dir, tf: e?.tf ?? {}, btcTrend: e?.btcTrend ?? null, leverage: p.leverage, symbol: p.symbol, slPct: p.slPct });
 }
 
 /** TP = menang, SL/likuidasi = kalah, tutup manual = dilihat dari PnL bersih. */
 export function isWin(book: Book, p: Position) {
-  if (p.reason === 'TP') return true;
+  if (p.reason === 'TP' || p.reason === 'TRAIL') return true;
   if (p.reason === 'SL' || p.reason === 'LIQ') return false;
   return positionLedger(book, p.id).net > 0;
 }

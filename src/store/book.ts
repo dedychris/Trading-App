@@ -6,6 +6,11 @@ import type { Book, Position, Settings } from './types';
 export const defaultSettings = (): Settings => ({
   theme: typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark',
   bnb: false,
+  tpPct: 14,
+  slPct: 7,
+  trailOn: true,
+  trailPct: 4,
+  auto: { enabled: false, deviceId: null, leverage: 10, marginMode: 'fixed', marginFixed: 100, marginPercent: 2, tpPct: 14, slPct: 7, trailOn: true, trailPct: 4, maxOpen: 3, dailyLossPct: 5 },
   marginMode: 'fixed',
   marginFixed: 100,
   marginPercent: 5,
@@ -58,7 +63,11 @@ function newer<T extends { updatedAt: number }>(a: T, b: T) {
 function mergePos(a: Position, b: Position): Position {
   if (a.status !== b.status) return a.status === 'closed' ? a : b;
   const w = newer(a, b);
-  return { ...w, checkedUntil: Math.max(a.checkedUntil, b.checkedUntil), fundingUntil: Math.max(a.fundingUntil, b.fundingUntil) };
+  const merged: Position = { ...w, checkedUntil: Math.max(a.checkedUntil, b.checkedUntil), fundingUntil: Math.max(a.fundingUntil, b.fundingUntil) };
+  // trailing: aktif di salah satu device = aktif; ambil profit tertinggi
+  if (a.trailActive || b.trailActive) merged.trailActive = true;
+  if (a.peakRoe !== undefined || b.peakRoe !== undefined) merged.peakRoe = Math.max(a.peakRoe ?? -Infinity, b.peakRoe ?? -Infinity);
+  return merged;
 }
 
 const ORDER_RANK = { pending: 0, cancelled: 1, filled: 2 } as const;

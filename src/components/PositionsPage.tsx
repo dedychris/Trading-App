@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { base, fmtDuration, fmtNum, fmtPct, fmtPrice, fmtUsd } from '../lib/format';
-import { pnl } from '../lib/sim';
+import { base, fmtDuration, fmtNum, fmtPct, fmtPrice, fmtUsd, fmtSet } from '../lib/format';
+import { pnl, TP_PCT } from '../lib/sim';
+import { priceAtRoe, trailStopRoe } from '../lib/trailing';
 import { cancelOrder, useApp } from '../store/app';
 import { positionLedger } from '../store/book';
 import { manualClose } from '../store/engine';
@@ -26,6 +27,7 @@ function PositionCard({ p }: { p: Position }) {
         <DirBadge dir={p.dir} />
         <span className="chip bg-panel2">{p.leverage}×</span>
         {p.entryType === 'limit' && <span className="chip bg-panel2 text-mute">limit</span>}
+        {p.auto && <span className="chip bg-accent/15 text-accent">🤖 AUTO</span>}
         <span className="ml-auto text-[11px] text-mute">{fmtDuration(Date.now() - p.openedAt)}</span>
       </div>
       <div className="mt-2 flex items-end justify-between gap-2">
@@ -45,9 +47,21 @@ function PositionCard({ p }: { p: Position }) {
         </div>
         <div className="mt-1 flex justify-between text-[11px] num">
           <span className="text-down">SL {fmtPrice(p.sl)} <span className="text-mute">({fmtNum(toSl, 2)}%)</span></span>
-          <span className="text-up">TP {fmtPrice(p.tp)} <span className="text-mute">({fmtNum(toTp, 2)}%)</span></span>
+          <span className="text-up">TP{p.trailPct ? ' ↗' : ''} {fmtPrice(p.tp)} <span className="text-mute">({fmtNum(toTp, 2)}%)</span></span>
         </div>
       </div>
+      {p.trailPct ? (
+        <div className={`mt-2 rounded-md px-2 py-1 text-[11px] ${p.trailActive ? 'bg-up/10 text-up' : 'bg-panel2 text-mute'}`}>
+          {p.trailActive ? (
+            <>
+              🎯 Trailing aktif · profit tertinggi <b className="num">+{fmtNum(p.peakRoe, 1)}%</b> · keluar kalau turun ke{' '}
+              <b className="num">+{fmtNum(trailStopRoe(p.tpPct ?? TP_PCT, p.trailPct, p.peakRoe ?? 0), 1)}%</b> (harga {fmtPrice(priceAtRoe(p.dir, p.entry, p.leverage, trailStopRoe(p.tpPct ?? TP_PCT, p.trailPct, p.peakRoe ?? 0)))})
+            </>
+          ) : (
+            <>↗ Trailing TP: aktif setelah +{fmtSet(p.tpPct ?? TP_PCT)}%, lalu ikut naik dengan jarak {fmtSet(p.trailPct)}%</>
+          )}
+        </div>
+      ) : null}
       <div className="mt-2 grid grid-cols-4 gap-2 text-[11px] num">
         <div><div className="text-mute">Entry</div>{fmtPrice(p.entry)}</div>
         <div><div className="text-mute">Harga</div>{fmtPrice(px)}</div>

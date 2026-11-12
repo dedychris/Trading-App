@@ -7,25 +7,41 @@ import { analyzeSymbol } from '../lib/scanner';
 import { addFunding, closePosition, fillOrder, patchOrder, patchPosition, useApp } from './app';
 import { positionLedger } from './book';
 import type { CloseReason, Position } from './types';
+import { step } from '../lib/trailing';
+import { TP_PCT } from '../lib/sim';
 
+const posLike = (p: Position) => ({ dir: p.dir, entry: p.entry, leverage: p.leverage, tp: p.tp, sl: p.sl, liq: p.liq, tpPct: p.tpPct ?? TP_PCT, trailPct: p.trailPct ?? null });
+
+/**
+ * Cek satu tick/candle. Kalau trailing baru aktif atau profit tertinggi naik ≥ 0,5% margin,
+ * state trailing disimpan (supaya ikut tersinkron & tidak hilang saat app ditutup).
+ */
 function hit(p: Position, high: number, low: number): { reason: CloseReason; price: number } | null {
-  if (p.dir === 'LONG') {
-    if (low <= p.liq) return { reason: 'LIQ', price: p.liq };
-    if (low <= p.sl) return { reason: 'SL', price: p.sl };
-    if (high >= p.tp) return { reason: 'TP', price: p.tp };
-  } else {
-    if (high >= p.liq) return { reason: 'LIQ', price: p.liq };
-    if (high >= p.sl) return { reason: 'SL', price: p.sl };
-    if (low <= p.tp) return { reason: 'TP', price: p.tp };
+  const st0 = { active: Boolean(p.trailActive), peakRoe: p.peakRoe ?? 0 };
+  const r = step(posLike(p), st0, high, low);
+  if (r.exit) return r.exit;
+  if (r.st.active && (!st0.active || r.st.peakRoe >= st0.peakRoe + 0.5)) {
+    if (!st0.active) announceTrail(p);
+    patchPosition(p.id, { trailActive: true, peakRoe: r.st.peakRoe });
+    p.trailActive = true;
+    p.peakRoe = r.st.peakRoe;
   }
   return null;
+}
+
+function announceTrail(p: Position) {
+  const s = useApp.getState().book.settings;
+  const text = `🎯 ${p.symbol} ${p.dir} nyentuh TP +${p.tpPct ?? TP_PCT}% — trailing aktif, profit dikunci & dibiarkan jalan`;
+  useApp.getState().toast(text, 'good');
+  if (s.sound) beep('good');
+  if (s.notify) systemNotify('Trailing TP aktif', text);
 }
 
 function announceClose(p: Position) {
   const { settings } = useApp.getState().book;
   const net = positionLedger(useApp.getState().book, p.id).net;
-  const label = p.reason === 'TP' ? '✅ TP kena' : p.reason === 'SL' ? '❌ SL kena' : p.reason === 'LIQ' ? '💀 Likuidasi' : 'Posisi ditutup';
-  const text = `${label}: ${p.symbol} ${p.dir} ${p.leverage}× → ${fmtUsd(net, true)} USDT`;
+  const label = p.reason === 'TP' ? '✅ TP kena' : p.reason === 'TRAIL' ? '✅ TP trailing kena' : p.reason === 'SL' ? '❌ SL kena' : p.reason === 'LIQ' ? '💀 Likuidasi' : 'Posisi ditutup';
+  const text = `${p.auto ? '🤖 ' : ''}${label}: ${p.symbol} ${p.dir} ${p.leverage}× → ${fmtUsd(net, true)} USDT`;
   useApp.getState().toast(text, net >= 0 ? 'good' : 'bad');
   if (settings.sound) beep(net >= 0 ? 'good' : 'bad');
   if (settings.notify) systemNotify(label, text);

@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { getDerivatives, type Derivs } from '../lib/binance';
-import { filterComparison } from '../lib/backtest';
+import { avgOutcome, filterComparison } from '../lib/backtest';
 import { loadSymbolSeries, statesFrom } from '../lib/scanner';
 import { btcConflict, classify, FILTER_INFO, RULES, sentimentPass, setupShort, TFS, type Dir, type TF } from '../lib/signals';
 import { estMaxLeverage, previewOrder } from '../lib/sim';
-import { base, fmtNum, fmtPct, fmtPrice, fmtUsd } from '../lib/format';
+import { base, fmtNum, fmtPct, fmtPrice, fmtUsd, fmtSet } from '../lib/format';
 import { availableBalance, marginFor, openPosition, placeLimit, useApp, validateOrder } from '../store/app';
 import type { Snapshot } from '../store/types';
 import type { SymbolSeries } from '../lib/backtest';
 import { PriceChart } from './Chart';
 import { DirBadge, Modal, Signed, WinratePill } from './ui';
-import { useMyWinrate, useWinrate } from './hooks';
+import { useActiveFilters, useMyWinrate, useWinrate } from './hooks';
 import { PatternAlert } from './PatternAlert';
 
 export function CoinDetail({ symbol }: { symbol: string }) {
@@ -160,9 +160,11 @@ function DerivsCard({ d, dir }: { d: Derivs | null; dir?: Dir }) {
 function FilterCompare({ symbol }: { symbol: string }) {
   const all = useApp((s) => s.scan.result?.series);
   const lev = useApp((s) => s.book.settings.leverage);
+  const tp = useApp((s) => s.book.settings.tpPct);
+  const sl = useApp((s) => s.book.settings.slPct);
   const states = useMemo(() => (all?.[symbol] ? statesFrom(all[symbol]) : null), [all, symbol]);
   const setup = states ? classify(states) : null;
-  const cmp = useMemo(() => (all && setup ? filterComparison(all, symbol, setup.key, setup.dir, lev) : null), [all, symbol, setup?.key, setup?.dir, lev]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cmp = useMemo(() => (all && setup ? filterComparison(all, symbol, setup.key, setup.dir, lev, tp, sl) : null), [all, symbol, setup?.key, setup?.dir, lev, tp, sl]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!cmp || !setup) return null;
   const pct = (x: { pool: { wins: number; n: number } }) => (x.pool.n ? fmtPct((x.pool.wins / x.pool.n) * 100, 0) : '—');
   return (
@@ -208,13 +210,26 @@ function OrderForm({ symbol, price, defaultDir, states, derivs }: { symbol: stri
   const [fixed, setFixed] = useState(String(settings.marginFixed));
   const [percent, setPercent] = useState(String(settings.marginPercent));
   const [confirm, setConfirm] = useState(false);
+  const [tpStr, setTpStr] = useState(String(settings.tpPct));
+  const [slStr, setSlStr] = useState(String(settings.slPct));
+  const [trailOn, setTrailOn] = useState(settings.trailOn);
+  const [trailStr, setTrailStr] = useState(String(settings.trailPct));
+  const tpPct = +tpStr;
+  const slPct = +slStr;
+  const trailPct = trailOn ? +trailStr : null;
+  const series = useApp((s) => s.scan.result?.series);
+  const activeFilters = useActiveFilters();
 
   const setup = classify(states);
   const key = setup?.dir === dir ? setup.key : undefined;
   const margin = mode === 'fixed' ? +fixed : marginFor({ ...settings, marginMode: 'percent', marginPercent: +percent }, book);
   const entry = type === 'market' ? price : +limitPx;
-  const pv = entry > 0 && margin > 0 ? previewOrder({ dir, entry, leverage: lev, margin, entryType: type, bnb: settings.bnb }) : null;
-  const wr = useWinrate(symbol, key, dir, lev);
+  const pv = entry > 0 && margin > 0 ? previewOrder({ dir, entry, leverage: lev, margin, entryType: type, bnb: settings.bnb, tpPct, slPct }) : null;
+  const wr = useWinrate(symbol, key, dir, lev, undefined, tpPct > 0 ? tpPct : undefined, slPct > 0 ? slPct : undefined);
+  const avg = useMemo(
+    () => (series && key && tpPct > 0 && slPct > 0 && trailPct && trailPct > 0 ? avgOutcome(series, key, dir, lev, activeFilters, tpPct, slPct, trailPct) : null),
+    [series, key, dir, lev, activeFilters, tpPct, slPct, trailPct],
+  );
   const mine = useMyWinrate(key, dir);
   const maxLev = estMaxLeverage(symbol);
   const g15 = states['15m'];
@@ -223,7 +238,7 @@ function OrderForm({ symbol, price, defaultDir, states, derivs }: { symbol: stri
   const sentimentBad = derivs && !sentimentPass(dir, derivs.fundingRate, derivs.longPct);
 
   const submit = () => {
-    const params = { symbol, dir, leverage: lev, margin, price: entry, type, snap: null as Snapshot | null };
+    const params = { symbol, dir, leverage: lev, margin, price: entry, type, snap: null as Snapshot | null, tpPct, slPct, trailPct };
     const err = validateOrder(params, price);
     if (err) {
       useApp.getState().toast(err, 'bad');
@@ -244,7 +259,7 @@ function OrderForm({ symbol, price, defaultDir, states, derivs }: { symbol: stri
       breakevenWinrate: pv?.breakevenWinrate,
     };
     if (type === 'market') {
-      openPosition({ symbol, dir, leverage: lev, margin, entry: price, entryType: 'market', snap });
+      openPosition({ symbol, dir, leverage: lev, margin, entry: price, entryType: 'market', snap, tpPct, slPct, trailPct });
       useApp.getState().toast(`Posisi ${base(symbol)} ${dir} ${lev}× dibuka di ${fmtPrice(price)}`, 'good');
     } else {
       placeLimit({ ...params, snap });
@@ -301,18 +316,56 @@ function OrderForm({ symbol, price, defaultDir, states, derivs }: { symbol: stri
         <div className="mt-1 text-[11px] text-mute num">Tersedia {fmtUsd(availableBalance(book))} USDT</div>
       </div>
 
+      <div>
+        <span className="label">TP / SL (% dari margin)</span>
+        <div className="mt-1 grid grid-cols-2 gap-2">
+          <label className="flex items-center gap-1">
+            <span className="text-xs text-up">TP +</span>
+            <input className="input" inputMode="decimal" aria-label="TP persen" value={tpStr} onChange={(e) => setTpStr(e.target.value.replace(',', '.'))} />
+            <span className="text-xs">%</span>
+          </label>
+          <label className="flex items-center gap-1">
+            <span className="text-xs text-down">SL −</span>
+            <input className="input" inputMode="decimal" aria-label="SL persen" value={slStr} onChange={(e) => setSlStr(e.target.value.replace(',', '.'))} />
+            <span className="text-xs">%</span>
+          </label>
+        </div>
+        <label className="mt-2 flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={trailOn} onChange={(e) => setTrailOn(e.target.checked)} />
+          <span>Trailing TP</span>
+          {trailOn && (
+            <>
+              <span className="text-xs text-mute">jarak</span>
+              <input className="input w-16 !py-1" inputMode="decimal" aria-label="Jarak trailing" value={trailStr} onChange={(e) => setTrailStr(e.target.value.replace(',', '.'))} />
+              <span className="text-xs">%</span>
+            </>
+          )}
+        </label>
+        {trailOn && <div className="mt-1 text-[11px] text-mute">Nyentuh TP → nggak ditutup, profit +{tpStr}% dikunci, lalu ikut naik (keluar kalau balik {trailStr}% dari puncak).</div>}
+      </div>
+
       {pv && (
         <div className="space-y-1.5 rounded-lg bg-panel2 p-3 text-sm">
           <Row k="Entry" v={fmtPrice(pv.entry)} />
-          <Row k={`TP (+14% margin)`} v={<span className="text-up">{fmtPrice(pv.tp)} <span className="text-xs">({dir === 'LONG' ? '+' : '−'}{fmtNum(pv.tpMovePct, 2)}%)</span></span>} />
-          <Row k={`SL (−7% margin)`} v={<span className="text-down">{fmtPrice(pv.sl)} <span className="text-xs">({dir === 'LONG' ? '−' : '+'}{fmtNum(pv.slMovePct, 2)}%)</span></span>} />
+          <Row k={`TP (+${fmtSet(tpPct)}% margin)${trailPct ? ' ↗' : ''}`} v={<span className="text-up">{fmtPrice(pv.tp)} <span className="text-xs">({dir === 'LONG' ? '+' : '−'}{fmtNum(pv.tpMovePct, 2)}%)</span></span>} />
+          <Row k={`SL (−${fmtSet(slPct)}% margin)`} v={<span className="text-down">{fmtPrice(pv.sl)} <span className="text-xs">({dir === 'LONG' ? '−' : '+'}{fmtNum(pv.slMovePct, 2)}%)</span></span>} />
           <Row k="Likuidasi (perkiraan)" v={<span className="text-warn">{fmtPrice(pv.liq)} <span className="text-xs">(~{fmtNum(pv.liqMovePct, 1)}%)</span></span>} />
           <Row k="Nilai posisi" v={`${fmtUsd(pv.notional)} USDT`} />
           <Row k={`Fee buka + tutup${settings.bnb ? ' (BNB −10%)' : ''}`} v={`${fmtUsd(pv.feeOpen + pv.feeClose)} USDT`} />
           <div className="my-1 border-t border-line" />
-          <Row k="Kalau kena TP" v={<span className="text-up font-semibold">{fmtUsd(pv.netWin, true)} USDT ({fmtPct(pv.netWinPct, 1, true)})</span>} />
+          <Row k={trailPct ? 'Minimal kalau kena TP' : 'Kalau kena TP'} v={<span className="text-up font-semibold">{fmtUsd(pv.netWin, true)} USDT ({fmtPct(pv.netWinPct, 1, true)})</span>} />
           <Row k="Kalau kena SL" v={<span className="text-down font-semibold">{fmtUsd(pv.netLoss, true)} USDT ({fmtPct(pv.netLossPct, 1, true)})</span>} />
           <Row k="Winrate minimal biar impas" v={fmtPct(pv.breakevenWinrate, 0)} />
+          {pv.netWin <= (pv.feeOpen + pv.feeClose) * 2 && <div className="text-[11px] text-warn">⚠️ TP terlalu kecil dibanding fee — sebagian besar profit kemakan fee.</div>}
+          {avg && avg.n > 0 && (
+            <div className="mt-1 rounded-md bg-panel p-2 text-[11px]">
+              <div className="text-mute">Rata-rata hasil per trade di backtest ({avg.n} kejadian, sebelum fee):</div>
+              <div className="num">
+                TP tetap <Signed v={avg.fixed}>{fmtPct(avg.fixed, 1, true)}</Signed> · trailing <Signed v={avg.trail}>{fmtPct(avg.trail, 1, true)}</Signed>
+                <span className="text-mute"> → trailing {avg.trail >= avg.fixed ? 'lebih untung' : 'lebih rugi'}</span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

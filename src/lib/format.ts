@@ -32,3 +32,8 @@ export function fmtDuration(ms: number) {
   return `${Math.floor(h / 24)}h ${h % 24}j`;
 }
 export const base = (symbol: string) => symbol.replace(/USDT$/, '');
+/** Angka setting (TP/SL/trailing): 14 → "14", 12.5 → "12,5". */
+export function fmtSet(v: number | null | undefined) {
+  if (v === null || v === undefined || !Number.isFinite(v)) return '—';
+  return String(+v.toFixed(2)).replace('.', ',');
+}

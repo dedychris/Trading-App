@@ -66,7 +66,7 @@ async function route(page) {
   // ganti leverage → preview berubah
   const lev = page.getByRole('dialog').locator('input[inputmode=numeric]').first();
   await lev.fill('10');
-  const tpTxt = await page.getByText('TP (+14% margin)').locator('..').textContent();
+  const tpTxt = await page.getByText(/^TP \(\+14% margin\)/).locator('..').textContent();
   console.log('preview 10×:', tpTxt);
   const openBtn = page.getByRole('button', { name: /^Open (LONG|SHORT) 10×/ });
   const dirName = (await openBtn.textContent()).includes('LONG') ? 'LONG' : 'SHORT';
@@ -80,8 +80,13 @@ async function route(page) {
   await page.screenshot({ path: `${OUT}/m-posisi.png` });
   // Gerakkan harga +/-2% ke arah posisi → TP 10× (1,4%) harus kena
   priceBump = dirName === 'LONG' ? 1.02 : 0.98;
-  await page.getByText(/TP kena/).waitFor({ timeout: 15000 });
-  console.log('TP tereksekusi untuk', dirName);
+  await page.getByText(/trailing aktif/).first().waitFor({ timeout: 15000 });
+  console.log('trailing aktif untuk', dirName);
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: `${OUT}/m-trailing.png` });
+  priceBump = 1; // harga balik → kena batas trailing (minimal TP terkunci)
+  await page.getByText(/TP trailing kena/).waitFor({ timeout: 15000 });
+  console.log('TP trailing tereksekusi');
   await page.goto('http://localhost:4173/#hist');
   await page.locator('main .card button').first().click();
   await page.getByText(/Audit/).waitFor();
@@ -106,6 +111,26 @@ async function route(page) {
   await dp.getByText(/^Winrate di \d+×$/).waitFor();
   await dp.waitForTimeout(800);
   await dp.screenshot({ path: `${OUT}/d-detail.png` });
+  // Auto trading dengan jam dipercepat
+  const ac = await browser.newContext({ viewport: { width: 1280, height: 1000 } });
+  const ap = await ac.newPage();
+  ap.on('pageerror', (e) => errors.push(String(e)));
+  await route(ap);
+  await ap.clock.install({ time: new Date() });
+  await ap.goto('http://localhost:4173/#set');
+  await ap.getByText('Auto trading', { exact: false }).first().waitFor();
+  await ap.locator('label', { hasText: 'Tiap candle 15m close' }).click();
+  await ap.getByText('Auto trading aktif. Menunggu').waitFor();
+  await ap.clock.fastForward('16:00');
+  let logText = '';
+  for (let i = 0; i < 60; i++) {
+    await ap.clock.runFor(1000);
+    await new Promise((r) => setTimeout(r, 300));
+    logText = (await ap.evaluate(() => document.body.innerText.split('Log auto')[1] || ''));
+    if (/Scan |Lewati|Buka|tidak ada sinyal/.test(logText) && !/Lagi scan/.test(await ap.evaluate(() => document.body.innerText))) break;
+  }
+  console.log('log auto:', (await ap.locator('text=Log auto').locator('..').innerText()).split('\n').slice(1, 7));
+  await ap.screenshot({ path: `${OUT}/auto-settings.png`, fullPage: true });
   // overflow horizontal di HP?
   const ov = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
   console.log('overflow mobile px:', ov);

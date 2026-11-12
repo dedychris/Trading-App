@@ -16,6 +16,9 @@ Paper trading semi-otomatis untuk **Binance Futures USDⓈ-M**: data **100% live
 - **Form order**: LONG/SHORT, Market/Limit, leverage 1–125× bebas, margin nominal tetap atau % saldo. Preview: harga TP (+14%)/SL (−7%) dari margin, jarak %, likuidasi (perkiraan), fee, PnL bersih, winrate minimal biar impas.
 - **Simulasi realistis**: fee Binance (taker 0,05%, maker 0,02%, diskon BNB −10% on/off), funding fee pakai rate asli Binance, TP/SL/likuidasi dicek pakai harga live + candle 1 menit saat app dibuka lagi.
 - **Posisi** (PnL live, tutup manual, boleh dobel posisi di koin yang sama) + **Order Pending**.
+- **TP/SL bisa diatur** (% dari margin): default di Pengaturan, bisa diubah per order. Winrate dihitung ulang sesuai TP/SL.
+- **Trailing TP**: nyentuh TP → posisi tidak ditutup, profit TP dikunci, batas keluar = maks(TP, profit tertinggi − jarak trailing). Form order menampilkan rata-rata hasil backtest TP tetap vs trailing.
+- **🤖 Auto trading (simulasi)**: tiap candle 15m close scan otomatis, buka posisi untuk sinyal ⭐ Golden / 3TF searah yang baru muncul. Syarat: winrate ≥ impas, tidak melawan BTC, tidak sideways (ADX 15m & 1H ≥ 25, Bollinger 1H tidak menyempit), tidak ada peringatan pola SL, lolos filter aktif. Setting terpisah (leverage, margin, TP/SL, trailing), maks posisi, 1 posisi per koin, stop rugi harian (reset 00:00 WIB), log alasan entry/lewati. Jalan selama app terbuka.
 - **Riwayat + Audit**: snapshot indikator saat entry & exit, analisa kenapa menang/kalah. Export CSV.
 - **Belajar dari pola**: tiap trade menyimpan pola kondisi saat entry (setup, arah, BTC, ADX, RSI, volume, SL vs ATR, leverage). Kalau sinyal baru mirip pola yang ≥ 3 kali sering kena SL, muncul peringatan ⚠️; kalau mirip pola yang sering kena TP, ditandai ✅. Hanya peringatan, tidak memblokir order.
 - **Statistik**: grafik saldo, winrate asli, rata-rata profit/rugi, profit factor, drawdown, total fee & funding, pola dari trade lu.

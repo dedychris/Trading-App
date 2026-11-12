@@ -14,7 +14,7 @@ export type Snapshot = {
   breakevenWinrate?: number;
 };
 
-export type CloseReason = 'TP' | 'SL' | 'LIQ' | 'MANUAL';
+export type CloseReason = 'TP' | 'TRAIL' | 'SL' | 'LIQ' | 'MANUAL';
 
 export type Position = {
   id: string;
@@ -28,6 +28,12 @@ export type Position = {
   sl: number;
   liq: number;
   entryType: 'market' | 'limit';
+  tpPct?: number; // TP % dari margin saat entry (kosong = 14)
+  slPct?: number; // SL % dari margin saat entry (kosong = 7)
+  auto?: boolean; // dibuka oleh auto trading
+  trailPct?: number | null; // jarak trailing (% margin); kosong = trailing mati
+  trailActive?: boolean;
+  peakRoe?: number; // profit tertinggi (% margin) sejak trailing aktif
   openedAt: number;
   status: 'open' | 'closed';
   exit?: number;
@@ -47,6 +53,9 @@ export type PendingOrder = {
   leverage: number;
   margin: number;
   price: number;
+  tpPct?: number;
+  slPct?: number;
+  trailPct?: number | null;
   createdAt: number;
   status: 'pending' | 'filled' | 'cancelled';
   checkedUntil: number;
@@ -57,8 +66,28 @@ export type PendingOrder = {
 export type LedgerKind = 'fee' | 'pnl' | 'funding';
 export type LedgerEntry = { id: string; t: number; amt: number; kind: LedgerKind; posId: string };
 
+export type AutoSettings = {
+  enabled: boolean;
+  deviceId: string | null; // null = jalan di semua device; isi = cuma device ini
+  leverage: number;
+  marginMode: 'fixed' | 'percent';
+  marginFixed: number;
+  marginPercent: number;
+  tpPct: number;
+  slPct: number;
+  trailOn: boolean;
+  trailPct: number;
+  maxOpen: number;
+  dailyLossPct: number;
+};
+
 export type Settings = {
   theme: 'light' | 'dark';
+  tpPct: number; // TP default order manual (% dari margin)
+  slPct: number; // SL default order manual (% dari margin)
+  trailOn: boolean;
+  trailPct: number; // jarak trailing TP (% dari margin)
+  auto: AutoSettings;
   bnb: boolean;
   marginMode: 'fixed' | 'percent';
   marginFixed: number;

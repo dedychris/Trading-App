@@ -9,11 +9,15 @@ export function useActiveFilters(): ActiveFilters {
   return useMemo(() => ({ volume: f.volume, ema200: f.ema200, bollinger: f.bollinger, atr: f.atr }), [f]);
 }
 
-export function useWinrate(symbol: string, key: SetupKey | undefined, dir: Dir | undefined, leverage: number, filters?: ActiveFilters): Winrate | null {
+export function useWinrate(symbol: string, key: SetupKey | undefined, dir: Dir | undefined, leverage: number, filters?: ActiveFilters, tpPct?: number, slPct?: number): Winrate | null {
   const series = useApp((s) => s.scan.result?.series);
+  const defTp = useApp((s) => s.book.settings.tpPct);
+  const defSl = useApp((s) => s.book.settings.slPct);
   const active = useActiveFilters();
   const f = filters ?? active;
-  return useMemo(() => (series && key && dir ? winrate(series, symbol, key, dir, leverage, f) : null), [series, symbol, key, dir, leverage, f]);
+  const tp = tpPct ?? defTp;
+  const sl = slPct ?? defSl;
+  return useMemo(() => (series && key && dir && tp > 0 && sl > 0 ? winrate(series, symbol, key, dir, leverage, f, tp, sl) : null), [series, symbol, key, dir, leverage, f, tp, sl]);
 }
 
 /** Opsi D: winrate dari paper trade lu sendiri untuk setup & arah yang sama. */

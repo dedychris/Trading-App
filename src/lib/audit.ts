@@ -10,8 +10,8 @@ export type AuditPoint = { tone: 'good' | 'bad' | 'info'; text: string };
 export function auditTrade(p: Position): AuditPoint[] {
   const out: AuditPoint[] = [];
   const e = p.snapEntry;
-  const won = p.reason === 'TP' || (p.reason === 'MANUAL' && (p.exit ?? 0) !== 0 && (p.dir === 'LONG' ? p.exit! > p.entry : p.exit! < p.entry));
-  if (p.closedAt) out.push({ tone: 'info', text: `Durasi posisi ${fmtDuration(p.closedAt - p.openedAt)}, ditutup karena ${p.reason === 'TP' ? 'TP kena' : p.reason === 'SL' ? 'SL kena' : p.reason === 'LIQ' ? 'likuidasi' : 'ditutup manual'}.` });
+  const won = p.reason === 'TP' || p.reason === 'TRAIL' || (p.reason === 'MANUAL' && (p.exit ?? 0) !== 0 && (p.dir === 'LONG' ? p.exit! > p.entry : p.exit! < p.entry));
+  if (p.closedAt) out.push({ tone: 'info', text: `Durasi posisi ${fmtDuration(p.closedAt - p.openedAt)}, ditutup karena ${p.reason === 'TP' ? 'TP kena' : p.reason === 'TRAIL' ? `TP trailing kena (profit sempat sampai +${(p.peakRoe ?? 0).toFixed(1)}% margin)` : p.reason === 'SL' ? 'SL kena' : p.reason === 'LIQ' ? 'likuidasi' : 'ditutup manual'}.` });
   if (!e) {
     out.push({ tone: 'info', text: 'Tidak ada snapshot indikator saat entry (order dibuka tanpa data scan).' });
     return out;
@@ -33,7 +33,7 @@ export function auditTrade(p: Position): AuditPoint[] {
   }
   const grid = e.tf['15m'];
   if (grid) {
-    const slMove = moves(p.leverage).sl * 100;
+    const slMove = moves(p.leverage, p.tpPct, p.slPct).sl * 100;
     if (slMove < grid.v.atrPct) out.push({ tone: 'bad', text: `Jarak SL ${fmtPct(slMove)} lebih sempit dari ATR 15m (${fmtPct(grid.v.atrPct)}) — goyangan normal saja bisa kena SL. Coba leverage lebih kecil.` });
     if (grid.v.volRatio < RULES.volRatioMin) out.push({ tone: 'bad', text: `Volume 15m cuma ${fmtNum(grid.v.volRatio, 2)}× rata-rata — momentum kurang konfirmasi.` });
     if (!Number.isNaN(grid.v.ema200) && (p.dir === 'LONG' ? grid.v.close < grid.v.ema200 : grid.v.close > grid.v.ema200)) out.push({ tone: 'bad', text: `Harga ${p.dir === 'LONG' ? 'di bawah' : 'di atas'} EMA200 15m — melawan tren besar.` });
@@ -80,7 +80,7 @@ export function insights(book: Book): Insight[] {
     const g = e?.tf['15m'];
     if (g) {
       add('Volume', g.v.volRatio >= RULES.volRatioMin ? 'volume kuat' : 'volume lemah', w);
-      add('ATR', moves(p.leverage).sl * 100 >= g.v.atrPct ? 'SL ≥ ATR' : 'SL < ATR', w);
+      add('ATR', moves(p.leverage, p.tpPct, p.slPct).sl * 100 >= g.v.atrPct ? 'SL ≥ ATR' : 'SL < ATR', w);
     }
   }
   const out: Insight[] = [];

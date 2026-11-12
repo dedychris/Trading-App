@@ -1,32 +1,15 @@
 import { useMemo } from 'react';
-import { runScan, type ScanRow } from '../lib/scanner';
+import { type ScanRow } from '../lib/scanner';
+import { doScan } from '../store/scan';
+import { autoAllowedHere } from '../store/autotrader';
 import { btcConflict, FILTER_INFO, filterPass, SETUP_INFO, SETUP_ORDER, TFS, type SetupKey } from '../lib/signals';
 import { atrPass } from '../lib/signals';
 import { moves, tpSlPrices } from '../lib/sim';
-import { base, fmtCompact, fmtNum, fmtPct, fmtPrice, fmtTime } from '../lib/format';
-import { beep, systemNotify } from '../lib/notify';
+import { base, fmtCompact, fmtNum, fmtPct, fmtPrice, fmtTime, fmtSet } from '../lib/format';
 import { useApp } from '../store/app';
 import { DirBadge, Empty, Signed, WinratePill } from './ui';
 import { useWinrate } from './hooks';
 import { PatternAlert } from './PatternAlert';
-
-export async function doScan() {
-  const set = useApp.setState;
-  const st = useApp.getState();
-  if (st.scan.status === 'running') return;
-  set({ scan: { ...st.scan, status: 'running', done: 0, total: 0, error: undefined } });
-  try {
-    const result = await runScan((done, total) => set({ scan: { ...useApp.getState().scan, done, total } }));
-    set({ scan: { status: 'done', done: result.rows.length, total: result.rows.length, result } });
-    const n3 = result.rows.filter((r) => r.setup?.key === 'GOLD').length;
-    const s = useApp.getState().book.settings;
-    if (s.sound) beep('info');
-    if (s.notify && n3) systemNotify('Scan selesai', `${n3} koin ⭐ Golden`);
-    if (result.failed.length) useApp.getState().toast(`${result.failed.length} koin gagal dimuat: ${result.failed.slice(0, 5).join(', ')}`, 'bad');
-  } catch (e) {
-    set({ scan: { ...useApp.getState().scan, status: 'error', error: (e as Error).message } });
-  }
-}
 
 function BtcCard() {
   const btc = useApp((s) => s.scan.result?.btc);
@@ -72,12 +55,12 @@ function CoinCard({ row }: { row: ScanRow }) {
     if (settings.filters.volume && !filterPass('volume', grid, setup.dir)) failed.push('Volume');
     if (settings.filters.ema200 && !filterPass('ema200', grid, setup.dir)) failed.push('EMA200');
     if (settings.filters.bollinger && !filterPass('bollinger', grid, setup.dir)) failed.push('Bollinger');
-    if (settings.filters.atr && !atrPass(grid.v.atrPct, moves(settings.leverage).sl * 100)) failed.push('ATR');
+    if (settings.filters.atr && !atrPass(grid.v.atrPct, moves(settings.leverage, settings.tpPct, settings.slPct).sl * 100)) failed.push('ATR');
   }
   const conflict = btc && row.symbol !== 'BTCUSDT' && btcConflict(btc.trend, setup.dir);
   const entry = live ?? row.price;
-  const lv = tpSlPrices(setup.dir, entry, settings.leverage);
-  const m = moves(settings.leverage);
+  const lv = tpSlPrices(setup.dir, entry, settings.leverage, settings.tpPct, settings.slPct);
+  const m = moves(settings.leverage, settings.tpPct, settings.slPct);
   const sign = setup.dir === 'LONG' ? 1 : -1;
   return (
     <button onClick={() => open(row.symbol)} className={`card w-full p-3 text-left transition hover:border-accent/60 ${setup.key === 'GOLD' ? 'border-accent/70 ring-1 ring-accent/30' : ''} ${failed.length ? 'opacity-60' : ''}`}>
@@ -117,7 +100,7 @@ function CoinCard({ row }: { row: ScanRow }) {
           <div className="font-semibold">{fmtPrice(entry)}</div>
         </div>
         <div>
-          <div className="text-mute">TP</div>
+          <div className="text-mute">TP {settings.trailOn ? '↗ trailing' : ''}</div>
           <div className="font-semibold text-up">{fmtPrice(lv.tp)}</div>
           <div className="text-[10px] text-mute">{fmtPct(sign * m.tp * 100, 2, true)}</div>
         </div>
@@ -140,10 +123,35 @@ function CoinCard({ row }: { row: ScanRow }) {
   );
 }
 
+function AutoBanner() {
+  const a = useApp((s) => s.book.settings.auto);
+  const run = useApp((s) => s.autoRun);
+  const last = useApp((s) => s.autoLog[0]);
+  if (!a.enabled) return null;
+  const here = autoAllowedHere();
+  return (
+    <div className="card flex flex-wrap items-center gap-x-3 gap-y-1 border-accent/50 p-3 text-sm">
+      <span className="chip bg-accent text-black">🤖 AUTO ON</span>
+      {here ? (
+        <span className="text-mute">
+          {run.running ? 'Lagi scan & cek sinyal…' : run.nextAt ? `Scan otomatis berikutnya ${new Date(run.nextAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}` : 'Menyiapkan…'}
+          {' '}· ⭐ Golden & 3TF searah · {a.leverage}× · TP {a.tpPct}% / SL {a.slPct}%{a.trailOn ? ` · trailing ${a.trailPct}%` : ''}
+        </span>
+      ) : (
+        <span className="text-mute">Auto trading jalan di device lain (diatur di Pengaturan).</span>
+      )}
+      {here && last && <span className={`w-full text-xs ${last.tone === 'good' ? 'text-up' : last.tone === 'bad' ? 'text-down' : 'text-mute'}`}>Terakhir: {last.text}</span>}
+    </div>
+  );
+}
+
 function LeverageBar() {
   const lev = useApp((s) => s.book.settings.leverage);
   const update = useApp((s) => s.updateSettings);
-  const m = moves(lev);
+  const tp = useApp((s) => s.book.settings.tpPct);
+  const sl = useApp((s) => s.book.settings.slPct);
+  const trail = useApp((s) => (s.book.settings.trailOn ? s.book.settings.trailPct : null));
+  const m = moves(lev, tp, sl);
   const set = (v: number) => update({ leverage: Math.max(1, Math.min(125, Math.round(v) || 1)) });
   return (
     <div className="card flex flex-wrap items-center gap-x-3 gap-y-2 p-3">
@@ -160,7 +168,7 @@ function LeverageBar() {
         ))}
       </div>
       <span className="text-xs text-mute">
-        TP ±{fmtNum(m.tp * 100, 2)}% · SL ±{fmtNum(m.sl * 100, 2)}% dari entry · winrate ikut dihitung ulang
+        TP +{fmtSet(tp)}% / SL −{fmtSet(sl)}% margin = harga ±{fmtNum(m.tp * 100, 2)}% / ±{fmtNum(m.sl * 100, 2)}%{trail ? ` · trailing ${fmtSet(trail)}%` : ''} · ubah TP/SL di Pengaturan
       </span>
     </div>
   );
@@ -182,7 +190,7 @@ export function ScannerPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <button className="btn-primary px-5 py-2.5 text-base" onClick={doScan} disabled={scan.status === 'running'}>
+        <button className="btn-primary px-5 py-2.5 text-base" onClick={() => doScan()} disabled={scan.status === 'running'}>
           {scan.status === 'running' ? `Scanning… ${scan.done}/${scan.total || 40}` : '⚡ Scan Now'}
         </button>
         <div className="text-xs text-mute">
@@ -190,6 +198,7 @@ export function ScannerPage() {
           {scan.result && <div>Scan terakhir {fmtTime(scan.result.at)} · {total} koin qualify · winrate dihitung di leverage {settings.leverage}×</div>}
         </div>
       </div>
+      <AutoBanner />
       <LeverageBar />
       {scan.status === 'running' && (
         <div className="h-1.5 overflow-hidden rounded-full bg-panel2">
@@ -208,7 +217,7 @@ export function ScannerPage() {
         <Empty>
           Tekan <b>Scan Now</b> untuk scan 40 koin teratas Binance Futures.
           <br />
-          Winrate tiap sinyal dihitung dari backtest data historis asli (TP +14% / SL −7% dari margin).
+          Winrate tiap sinyal dihitung dari backtest data historis asli (TP/SL sesuai Pengaturan, % dari margin).
         </Empty>
       )}
       {scan.result && total === 0 && <Empty>Tidak ada koin yang qualify saat ini. Coba scan lagi nanti.</Empty>}

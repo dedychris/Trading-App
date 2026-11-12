@@ -4,7 +4,10 @@ import { FEE, START_BALANCE } from '../lib/sim';
 import { requestNotifyPermission } from '../lib/notify';
 import { resetAccount, useApp } from '../store/app';
 import { signInGoogle, signOut, syncConfigured, syncNow } from '../store/sync';
-import { fmtTime } from '../lib/format';
+import { fmtNum, fmtPct, fmtTime, fmtUsd } from '../lib/format';
+import { previewOrder } from '../lib/sim';
+import { deviceId, todayPnl } from '../store/autotrader';
+import { Signed } from './ui';
 
 function Toggle({ on, onChange, label, desc }: { on: boolean; onChange: (v: boolean) => void; label: ReactNode; desc?: ReactNode }) {
   return (
@@ -26,6 +29,125 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
     <section className="card p-4">
       <h2 className="label mb-2">{title}</h2>
       <div className="divide-y divide-line">{children}</div>
+    </section>
+  );
+}
+
+function NumInput({ value, onChange, max = 1000 }: { value: number; onChange: (v: number) => void; max?: number }) {
+  const [str, setStr] = useState(String(value));
+  useEffect(() => setStr(String(value)), [value]);
+  return (
+    <input
+      className="input w-20 !py-1"
+      inputMode="decimal"
+      value={str}
+      onChange={(e) => {
+        const v = e.target.value.replace(',', '.');
+        setStr(v);
+        const n = +v;
+        if (n > 0 && n <= max) onChange(n);
+      }}
+    />
+  );
+}
+
+function AutoSection() {
+  const a = useApp((x) => x.book.settings.auto);
+  const bnb = useApp((x) => x.book.settings.bnb);
+  const logs = useApp((x) => x.autoLog);
+  const run = useApp((x) => x.autoRun);
+  const update = useApp((x) => x.updateSettings);
+  const set = (p: Partial<typeof a>) => update({ auto: { ...a, ...p } });
+  const me = deviceId();
+  const margin = a.marginMode === 'fixed' ? a.marginFixed : 100;
+  const pv = previewOrder({ dir: 'LONG', entry: 100, leverage: a.leverage, margin, entryType: 'market', bnb, tpPct: a.tpPct, slPct: a.slPct });
+  const today = todayPnl();
+  return (
+    <section className="card p-4 lg:col-span-2">
+      <h2 className="label mb-2">🤖 Auto trading (simulasi)</h2>
+      <div className="grid gap-x-6 lg:grid-cols-2">
+        <div className="divide-y divide-line">
+          <Toggle
+            on={a.enabled}
+            onChange={(v) => set({ enabled: v })}
+            label={<>Auto trading {a.enabled ? <span className="chip ml-1 bg-accent text-black">ON</span> : <span className="chip ml-1 bg-panel2 text-mute">OFF</span>}</>}
+            desc="Tiap candle 15m close: scan otomatis, lalu buka posisi untuk sinyal ⭐ Golden / 3TF searah yang baru muncul. Cuma jalan selama app terbuka."
+          />
+          <Toggle
+            on={a.deviceId === me}
+            onChange={(v) => set({ deviceId: v ? me : null })}
+            label="Jalankan cuma di device ini"
+            desc={a.deviceId && a.deviceId !== me ? 'Sekarang auto dikunci ke device lain.' : 'Kalau mati, auto jalan di semua device yang sedang membuka app (aman: posisi tidak dobel).'}
+          />
+          <div className="space-y-3 py-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-28">Leverage</span>
+              <NumInput value={a.leverage} onChange={(v) => set({ leverage: Math.min(125, Math.round(v)) })} max={125} />
+              <span className="text-xs text-mute">×</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-28">Margin</span>
+              <div className="seg">
+                <button data-on={a.marginMode === 'fixed'} onClick={() => set({ marginMode: 'fixed' })} className="!py-1 !text-xs">USDT</button>
+                <button data-on={a.marginMode === 'percent'} onClick={() => set({ marginMode: 'percent' })} className="!py-1 !text-xs">% saldo</button>
+              </div>
+              {a.marginMode === 'fixed' ? <NumInput value={a.marginFixed} onChange={(v) => set({ marginFixed: v })} max={1e9} /> : <NumInput value={a.marginPercent} onChange={(v) => set({ marginPercent: v })} max={100} />}
+              <span className="text-xs text-mute">{a.marginMode === 'fixed' ? 'USDT' : '% saldo'}</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-28">TP / SL</span>
+              <span className="text-xs text-up">+</span>
+              <NumInput value={a.tpPct} onChange={(v) => set({ tpPct: v })} />
+              <span className="text-xs text-down">−</span>
+              <NumInput value={a.slPct} onChange={(v) => set({ slPct: v })} max={99} />
+              <span className="text-xs text-mute">% margin</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-28">Trailing TP</span>
+              <input type="checkbox" checked={a.trailOn} onChange={(e) => set({ trailOn: e.target.checked })} aria-label="Trailing auto" />
+              {a.trailOn && (<><span className="text-xs text-mute">jarak</span><NumInput value={a.trailPct} onChange={(v) => set({ trailPct: v })} /><span className="text-xs text-mute">%</span></>)}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-28">Maks posisi auto</span>
+              <NumInput value={a.maxOpen} onChange={(v) => set({ maxOpen: Math.round(v) })} max={20} />
+              <span className="text-xs text-mute">(1 posisi per koin)</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-28">Stop rugi harian</span>
+              <span className="text-xs">−</span>
+              <NumInput value={a.dailyLossPct} onChange={(v) => set({ dailyLossPct: v })} max={100} />
+              <span className="text-xs text-mute">% saldo · reset 00:00 WIB</span>
+            </div>
+          </div>
+        </div>
+        <div className="space-y-3 py-2 text-sm">
+          <div className="rounded-lg bg-panel2 p-3 text-xs">
+            <div className="label mb-1">Hitungan per trade ({a.leverage}×{a.marginMode === 'fixed' ? `, margin ${fmtUsd(margin)}` : ', per 100 USDT margin'})</div>
+            <div>Harga harus gerak: TP <b className="num">{fmtNum(pv.tpMovePct, 2)}%</b> · SL <b className="num">{fmtNum(pv.slMovePct, 2)}%</b></div>
+            <div>Fee buka + tutup ±<b className="num">{fmtUsd(pv.feeOpen + pv.feeClose)}</b> USDT ({fmtNum(((pv.feeOpen + pv.feeClose) / margin) * 100, 1)}% margin)</div>
+            <div>Bersih kalau TP <span className="text-up num">{fmtUsd(pv.netWin, true)}</span> · kalau SL <span className="text-down num">{fmtUsd(pv.netLoss, true)}</span></div>
+            <div>Winrate minimal biar impas: <b className="num">{fmtPct(pv.breakevenWinrate, 0)}</b></div>
+            {pv.netWin <= (pv.feeOpen + pv.feeClose) * 2 && <div className="mt-1 text-warn">⚠️ TP terlalu kecil dibanding fee.</div>}
+          </div>
+          <div className="text-xs text-mute">
+            Syarat entry: sinyal baru · winrate ≥ impas · tidak melawan BTC · tidak sideways (ADX 15m & 1H ≥ 25, Bollinger 1H tidak menyempit) · tidak ada peringatan pola SL · lolos filter aktif.
+          </div>
+          <div className="text-xs">
+            PnL hari ini: <Signed v={today.pnl}>{fmtUsd(today.pnl, true)} USDT</Signed>
+            {a.enabled && run.nextAt && <> · scan berikutnya {new Date(run.nextAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</>}
+          </div>
+          <div>
+            <div className="label mb-1">Log auto (kenapa entry / dilewati)</div>
+            <div className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-line p-2 text-xs">
+              {logs.length ? logs.map((l, i) => (
+                <div key={i} className={l.tone === 'good' ? 'text-up' : l.tone === 'bad' ? 'text-down' : 'text-mute'}>
+                  <span className="num">{new Date(l.t).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span> {l.text}
+                </div>
+              )) : <div className="text-mute">Belum ada aktivitas.</div>}
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
   );
 }
@@ -85,9 +207,30 @@ export function SettingsPage() {
             </div>
           </div>
           <Toggle on={s.bnb} onChange={(v) => update({ bnb: v })} label="Bayar fee pakai BNB (diskon 10%)" desc={`Taker ${(FEE.taker * 100).toFixed(2)}% → ${(FEE.taker * 90).toFixed(3)}%, maker ${(FEE.maker * 100).toFixed(2)}% → ${(FEE.maker * 90).toFixed(3)}%`} />
-          <div className="text-xs text-mute">TP +14% / SL −7% dari margin (tetap). Funding fee pakai rate asli Binance.</div>
+          <div>
+            <span className="text-sm font-medium">TP / SL default (% dari margin)</span>
+            <span className="block text-xs text-mute">Bisa diubah lagi per order di form order. Winrate ikut dihitung ulang.</span>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <span className="text-xs text-up">TP +</span>
+              <NumInput value={s.tpPct} onChange={(v) => update({ tpPct: v })} />
+              <span className="text-xs text-down">SL −</span>
+              <NumInput value={s.slPct} onChange={(v) => update({ slPct: v })} max={99} />
+              <span className="text-xs text-mute">%</span>
+            </div>
+          </div>
+          <Toggle on={s.trailOn} onChange={(v) => update({ trailOn: v })} label="Trailing TP (default)" desc="Nyentuh TP → posisi nggak ditutup. Profit TP dikunci, batas keluar ikut naik selama profit naik." />
+          {s.trailOn && (
+            <div className="flex items-center gap-2 text-sm">
+              <span>Jarak trailing</span>
+              <NumInput value={s.trailPct} onChange={(v) => update({ trailPct: v })} />
+              <span className="text-xs text-mute">% dari margin — keluar kalau profit turun segini dari puncaknya</span>
+            </div>
+          )}
+          <div className="text-xs text-mute">Funding fee pakai rate asli Binance.</div>
         </div>
       </Section>
+
+      <AutoSection />
 
       <Section title="Filter indikator tambahan">
         {FILTER_KEYS.map((k) => (

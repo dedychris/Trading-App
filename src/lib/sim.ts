@@ -1,8 +1,8 @@
 // Matematika trading: TP/SL dari margin, fee Binance, likuidasi (perkiraan), PnL.
 import type { Dir } from './signals';
 
-export const TP_PCT = 14; // % dari margin
-export const SL_PCT = 7; // % dari margin
+export const TP_PCT = 14; // % dari margin (default, bisa diubah di Pengaturan)
+export const SL_PCT = 7; // % dari margin (default, bisa diubah di Pengaturan)
 export const START_BALANCE = 10_000;
 export const FEE = { taker: 0.0005, maker: 0.0002, bnbDiscount: 0.1 };
 const MMR = 0.005; // maintenance margin rate perkiraan (tier terendah)
@@ -12,12 +12,12 @@ export function feeRate(kind: 'taker' | 'maker', bnb: boolean) {
 }
 
 /** Pergerakan harga (fraksi) yang dibutuhkan untuk TP & SL pada leverage tertentu. */
-export function moves(leverage: number) {
-  return { tp: TP_PCT / 100 / leverage, sl: SL_PCT / 100 / leverage };
+export function moves(leverage: number, tpPct = TP_PCT, slPct = SL_PCT) {
+  return { tp: tpPct / 100 / leverage, sl: slPct / 100 / leverage };
 }
 
-export function tpSlPrices(dir: Dir, entry: number, leverage: number) {
-  const m = moves(leverage);
+export function tpSlPrices(dir: Dir, entry: number, leverage: number, tpPct = TP_PCT, slPct = SL_PCT) {
+  const m = moves(leverage, tpPct, slPct);
   return dir === 'LONG'
     ? { tp: entry * (1 + m.tp), sl: entry * (1 - m.sl) }
     : { tp: entry * (1 - m.tp), sl: entry * (1 + m.sl) };
@@ -58,8 +58,8 @@ export type OrderPreview = {
   breakevenWinrate: number; // winrate minimal supaya impas
 };
 
-export function previewOrder(p: { dir: Dir; entry: number; leverage: number; margin: number; entryType: 'market' | 'limit'; bnb: boolean }): OrderPreview {
-  const { tp, sl } = tpSlPrices(p.dir, p.entry, p.leverage);
+export function previewOrder(p: { dir: Dir; entry: number; leverage: number; margin: number; entryType: 'market' | 'limit'; bnb: boolean; tpPct?: number; slPct?: number }): OrderPreview {
+  const { tp, sl } = tpSlPrices(p.dir, p.entry, p.leverage, p.tpPct, p.slPct);
   const liq = liqPrice(p.dir, p.entry, p.leverage);
   const notional = p.margin * p.leverage;
   const qty = notional / p.entry;
@@ -69,7 +69,7 @@ export function previewOrder(p: { dir: Dir; entry: number; leverage: number; mar
   const lossGross = pnl(p.dir, p.entry, sl, qty);
   const netWin = winGross - feeOpen - tp * qty * exitFeeRate;
   const netLoss = lossGross - feeOpen - sl * qty * exitFeeRate;
-  const m = moves(p.leverage);
+  const m = moves(p.leverage, p.tpPct, p.slPct);
   return {
     entry: p.entry,
     tp,
