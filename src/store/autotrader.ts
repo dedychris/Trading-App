@@ -1,10 +1,9 @@
 // 🤖 Auto trading (simulasi). Jalan selama app terbuka: langsung scan saat aktif, lalu tiap candle 15m close,
-// buka posisi untuk sinyal ⭐ Golden / 3TF searah (+ 4H+1H kalau aktif) yang BARU muncul dan lolos syarat.
+// buka posisi untuk sinyal ⭐ Golden / 3TF / 1H+15M searah (+ 4H+1H kalau aktif) yang BARU muncul dan lolos syarat.
 import { findSignals, winrate } from '../lib/backtest';
 import { getDerivatives } from '../lib/binance';
 import { fmtPct, fmtPrice, fmtUsd, base } from '../lib/format';
 import { beep, systemNotify } from '../lib/notify';
-import { features, matchPatterns, patternText } from '../lib/patterns';
 import { atrPass, btcConflict, filterPass, sentimentPass, SETUP_INFO, setupShort, type SetupKey } from '../lib/signals';
 import { moves, previewOrder } from '../lib/sim';
 import { availableBalance, openPosition, useApp, type AutoLog } from './app';
@@ -13,8 +12,14 @@ import { doScan } from './scan';
 import type { Snapshot } from './types';
 
 export const AUTO_KEYS: SetupKey[] = ['GOLD', '3TF'];
-export const autoKeys = (a: { with4h1h?: boolean }): SetupKey[] => (a.with4h1h ? [...AUTO_KEYS, '1H4H'] : AUTO_KEYS);
-export const ADX_MIN = 20; // batas anti-sideways (ADX 15m & 1H)
+// 1H+15M searah selalu ikut (cukup 1H & 15M searah); 4H+1H opsional
+export const autoKeys = (a: { with4h1h?: boolean }): SetupKey[] => (a.with4h1h ? [...AUTO_KEYS, '1H4H', '15M1H'] : [...AUTO_KEYS, '15M1H']);
+
+/** Jumlah posisi koin ini yang kena SL / likuidasi hari ini (WIB). */
+export function slToday(symbol: string, now = Date.now()) {
+  const start = dayStartWib(now);
+  return Object.values(useApp.getState().book.positions).filter((p) => p.symbol === symbol && p.status === 'closed' && (p.closedAt ?? 0) >= start && (p.reason === 'SL' || p.reason === 'LIQ')).length;
+}
 const SLOT = 15 * 60_000;
 const DELAY = 30_000; // tunggu 30 detik setelah candle close supaya data Binance sudah final
 const DAY = 86_400_000;
@@ -115,6 +120,11 @@ function evaluate() {
       skip('sudah ada posisi auto di koin ini');
       continue;
     }
+    const nSl = a.maxSlPerCoinDay > 0 ? slToday(r.symbol, now) : 0;
+    if (a.maxSlPerCoinDay > 0 && nSl >= a.maxSlPerCoinDay) {
+      skip(`koin ini sudah ${nSl}× kena SL hari ini (batas ${a.maxSlPerCoinDay}×) — lanjut besok 00:00 WIB`);
+      continue;
+    }
     // sinyal harus BARU muncul (maks N candle 15m terakhir; setup 4H+1H minimal 1 candle 1H)
     const ss = res.series[r.symbol];
     const sigs = findSignals(ss, setup.key);
@@ -129,16 +139,6 @@ function evaluate() {
     if (b.positions[id]) continue; // sudah dibuka (device lain / run sebelumnya)
     if (res.btc && r.symbol !== 'BTCUSDT' && btcConflict(res.btc.trend, setup.dir)) {
       skip(`melawan arah BTC (${res.btc.trend})`);
-      continue;
-    }
-    const g15 = r.tf['15m'];
-    const h1 = r.tf['1h'];
-    if (!g15 || !h1) {
-      skip('data indikator kurang');
-      continue;
-    }
-    if (g15.v.adx < ADX_MIN || h1.v.adx < ADX_MIN) {
-      skip(`sideways — ADX 15m ${g15.v.adx.toFixed(0)}, 1H ${h1.v.adx.toFixed(0)} (butuh ≥ ${ADX_MIN})`);
       continue;
     }
     const grid = r.tf[SETUP_INFO[setup.key].grid]!;
@@ -157,13 +157,8 @@ function evaluate() {
     // sampel yang dipakai winrate: koin ini kalau ≥ 20 kejadian, selain itu gabungan 40 koin
     const sample = wr.method === 'koin' ? wr.coin.n : wr.pool.n;
     const smallSample = a.ignoreSmallSample && sample < a.minSample;
-    if (!smallSample && (wr.pct === null || wr.pct < pv.breakevenWinrate)) {
+    if (a.requireWinrate && !smallSample && (wr.pct === null || wr.pct < pv.breakevenWinrate)) {
       skip(`winrate ${wr.pct === null ? 'belum ada data' : fmtPct(wr.pct, 0)} (${sample} kejadian) di bawah winrate impas ${fmtPct(pv.breakevenWinrate, 0)}`);
-      continue;
-    }
-    const pat = matchPatterns(features({ setupKey: setup.key, dir: setup.dir, tf: r.tf, btcTrend: res.btc?.trend ?? null, leverage: a.leverage, symbol: r.symbol, slPct: a.slPct }), b);
-    if (pat.bad) {
-      skip(`pola ini sering kena SL (${pat.bad.n - pat.bad.wins}/${pat.bad.n}): ${patternText(pat.bad)}`);
       continue;
     }
     if (margin > availableBalance(b)) {
@@ -171,7 +166,7 @@ function evaluate() {
       continue;
     }
     planned++;
-    void openAuto_({ id, symbol: r.symbol, setup, price, margin, wrPct: wr.pct, wrN: sample, smallSample, breakeven: pv.breakevenWinrate, tf: r.tf, needSentiment: book.settings.filters.sentiment, tag });
+    void openAuto_({ id, symbol: r.symbol, setup, price, margin, wrPct: wr.pct, wrN: sample, smallSample: smallSample || !a.requireWinrate, breakeven: pv.breakevenWinrate, tf: r.tf, needSentiment: book.settings.filters.sentiment, tag });
   }
 }
 
@@ -221,7 +216,7 @@ async function openAuto_(x: {
     breakevenWinrate: x.breakeven,
   };
   openPosition({ id: x.id, symbol: x.symbol, dir: x.setup.dir, leverage: a.leverage, margin: x.margin, entry: price, entryType: 'market', snap, tpPct: a.tpPct, slPct: a.slPct, trailPct: a.trailOn ? a.trailPct : null, auto: true });
-  const wrText = x.smallSample ? `winrate diabaikan (sampel ${x.wrN} < ${a.minSample})` : `winrate ${fmtPct(x.wrPct, 0)}`;
+  const wrText = !a.requireWinrate ? `winrate ${fmtPct(x.wrPct, 0)} (info saja)` : x.smallSample ? `winrate diabaikan (sampel ${x.wrN} < ${a.minSample})` : `winrate ${fmtPct(x.wrPct, 0)}`;
   const text = `🤖 Auto ${x.setup.dir} ${base(x.symbol)} ${a.leverage}× di ${fmtPrice(price)} · ${setupShort(x.setup.key)} · ${wrText}`;
   log(`Buka ${x.tag} di ${fmtPrice(price)}, margin ${fmtUsd(x.margin)} USDT, ${wrText}`, 'good', x.symbol, `dibuka di ${fmtPrice(price)} · ${wrText}`);
   useApp.getState().toast(text, 'good');

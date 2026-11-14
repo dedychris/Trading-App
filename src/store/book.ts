@@ -3,6 +3,8 @@
 import { START_BALANCE } from '../lib/sim';
 import type { Book, Position, Settings } from './types';
 
+export const AUTO_RULES_V = 2;
+
 export const defaultSettings = (): Settings => ({
   theme: typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark',
   bnb: false,
@@ -10,7 +12,7 @@ export const defaultSettings = (): Settings => ({
   slPct: 7,
   trailOn: true,
   trailPct: 4,
-  auto: { enabled: true, deviceId: null, leverage: 10, marginMode: 'fixed', marginFixed: 100, marginPercent: 2, tpPct: 14, slPct: 7, trailOn: true, trailPct: 4, maxOpen: 3, dailyLossPct: 5, freshCandles: 2, ignoreSmallSample: true, minSample: 10, with4h1h: true, wakeLock: true },
+  auto: { enabled: true, deviceId: null, leverage: 10, marginMode: 'fixed', marginFixed: 100, marginPercent: 2, tpPct: 14, slPct: 7, trailOn: true, trailPct: 4, maxOpen: 3, dailyLossPct: 15, freshCandles: 2, ignoreSmallSample: true, minSample: 10, with4h1h: true, wakeLock: true, requireWinrate: false, maxSlPerCoinDay: 3, rulesV: AUTO_RULES_V },
   marginMode: 'fixed',
   marginFixed: 100,
   marginPercent: 5,
@@ -20,6 +22,14 @@ export const defaultSettings = (): Settings => ({
   notify: false,
   updatedAt: 0,
 });
+
+/** Lengkapi setting auto yang kurang + migrasi aturan lama (v2: stop rugi −15%, syarat winrate mati, maks 3 SL per koin/hari). */
+export function migrateSettings(s: Settings): Settings {
+  const d = defaultSettings().auto;
+  const a = { ...d, ...s.auto };
+  if ((s.auto?.rulesV ?? 1) >= AUTO_RULES_V) return { ...s, auto: a };
+  return { ...s, auto: { ...a, dailyLossPct: 15, requireWinrate: false, maxSlPerCoinDay: 3, rulesV: AUTO_RULES_V }, updatedAt: Date.now() };
+}
 
 export const emptyBook = (epoch = 1): Book => ({
   epoch,
@@ -74,7 +84,7 @@ const ORDER_RANK = { pending: 0, cancelled: 1, filled: 2 } as const;
 
 /** Gabungkan dua versi buku (lokal & cloud). Idempoten & deterministik. */
 export function mergeBooks(a: Book, b: Book): Book {
-  if (a.epoch !== b.epoch) return a.epoch > b.epoch ? { ...a, settings: newer(a.settings, b.settings) } : { ...b, settings: newer(a.settings, b.settings) };
+  if (a.epoch !== b.epoch) return a.epoch > b.epoch ? { ...a, settings: migrateSettings(newer(a.settings, b.settings)) } : { ...b, settings: migrateSettings(newer(a.settings, b.settings)) };
   const positions = { ...a.positions };
   for (const [id, p] of Object.entries(b.positions)) positions[id] = positions[id] ? mergePos(positions[id], p) : p;
   const orders = { ...a.orders };
@@ -90,7 +100,7 @@ export function mergeBooks(a: Book, b: Book): Book {
     positions,
     orders,
     ledger: { ...a.ledger, ...b.ledger },
-    settings: newer(a.settings, b.settings),
+    settings: migrateSettings(newer(a.settings, b.settings)),
   };
 }
 

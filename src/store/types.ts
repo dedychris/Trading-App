@@ -84,6 +84,9 @@ export type AutoSettings = {
   minSample: number;
   with4h1h: boolean; // ikut entry di setup 4H+1H searah (selain Golden & 3TF)
   wakeLock: boolean; // cegah layar mati selama auto aktif & app terbuka
+  requireWinrate: boolean; // syarat winrate backtest ≥ winrate impas
+  maxSlPerCoinDay: number; // koin yang sudah kena SL sebanyak ini hari ini (WIB) tidak di-entry lagi; 0 = mati
+  rulesV?: number; // versi aturan auto (untuk migrasi setting lama)
 };
 
 export type Settings = {
