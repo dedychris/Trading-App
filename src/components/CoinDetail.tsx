@@ -171,7 +171,7 @@ function FilterCompare({ symbol }: { symbol: string }) {
   return (
     <div className="card p-3">
       <div className="label mb-1">Indikator mana yang berguna? (backtest {setupShort(setup.key)} {setup.dir}, {lev}×)</div>
-      <div className="mb-2 text-xs text-mute">Winrate gabungan 40 koin dengan dan tanpa tiap filter. Kalau angkanya naik, filternya berguna.</div>
+      <div className="mb-2 text-xs text-mute">Winrate gabungan semua koin dengan dan tanpa tiap filter. Kalau angkanya naik, filternya berguna.</div>
       <table className="w-full text-sm num">
         <tbody>
           <tr className="border-b border-line">
@@ -378,7 +378,7 @@ function OrderForm({ symbol, price, defaultDir, states, derivs }: { symbol: stri
         {key && wr ? (
           <div className="mt-1.5 space-y-0.5 text-xs text-mute">
             <div>Koin ini: <span className="num text-ink">{wr.coin.n ? `${wr.coin.wins}/${wr.coin.n} (${fmtPct((wr.coin.wins / wr.coin.n) * 100, 0)})` : 'belum ada kejadian'}</span></div>
-            <div>Gabungan 40 koin: <span className="num text-ink">{wr.pool.n ? `${wr.pool.wins}/${wr.pool.n} (${fmtPct((wr.pool.wins / wr.pool.n) * 100, 0)})` : '—'}</span></div>
+            <div>Gabungan semua koin: <span className="num text-ink">{wr.pool.n ? `${wr.pool.wins}/${wr.pool.n} (${fmtPct((wr.pool.wins / wr.pool.n) * 100, 0)})` : '—'}</span></div>
             <div>Metode: {wr.method === 'koin' ? 'data koin ini (sampel ≥ 20)' : wr.method === 'campuran' ? 'campuran — sampel koin < 20, ditarik ke rata-rata gabungan' : wr.method === 'gabungan' ? 'gabungan (koin ini belum pernah)' : '—'} · histori ±{wr.periodDays} hari</div>
             <div>Trade lu ({setupShort(key)} {dir}): <span className="num text-ink">{mine.n ? `${mine.w}/${mine.n} (${fmtPct((mine.w / mine.n) * 100, 0)})` : 'belum ada'}</span></div>
             {pv && wr.pct !== null && (

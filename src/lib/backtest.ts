@@ -152,7 +152,7 @@ export type Winrate = {
   periodDays: number;
 };
 
-/** Opsi C: angka per koin kalau sampel ≥ 20, kalau kurang ditarik ke rata-rata gabungan 40 koin. */
+/** Opsi C: angka per koin kalau sampel ≥ 20, kalau kurang ditarik ke rata-rata gabungan semua koin. */
 export function combine(coin: Tally, pool: Tally, periodDays: number): Winrate {
   const pPool = pool.n ? pool.wins / pool.n : null;
   if (coin.n >= MIN_SAMPLE) return { pct: (coin.wins / coin.n) * 100, coin, pool, method: 'koin', periodDays };

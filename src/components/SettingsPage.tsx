@@ -71,7 +71,19 @@ function AutoSection() {
             on={a.enabled}
             onChange={(v) => set({ enabled: v })}
             label={<>Auto trading {a.enabled ? <span className="chip ml-1 bg-accent text-black">ON</span> : <span className="chip ml-1 bg-panel2 text-mute">OFF</span>}</>}
-            desc="Tiap candle 15m close: scan otomatis, lalu buka posisi untuk sinyal ⭐ Golden / 3TF searah yang baru muncul. Cuma jalan selama app terbuka."
+            desc="Langsung scan saat aktif, lalu tiap candle 15m close: buka posisi untuk sinyal ⭐ Golden / 3TF searah yang baru muncul. Koin: 20 market cap besar + 5 top volume. Cuma jalan selama app terbuka."
+          />
+          <Toggle
+            on={a.with4h1h}
+            onChange={(v) => set({ with4h1h: v })}
+            label="Ikut entry setup 4H+1H searah"
+            desc="Lebih sering entry. Sinyal 4H+1H dihitung di candle 1H."
+          />
+          <Toggle
+            on={a.wakeLock}
+            onChange={(v) => set({ wakeLock: v })}
+            label="Layar tetap nyala selama auto aktif"
+            desc="Kalau layar HP mati, browser membekukan app dan auto berhenti. Aktifkan + colok charger biar auto jalan terus."
           />
           <Toggle
             on={a.deviceId === me}

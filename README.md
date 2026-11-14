@@ -5,20 +5,20 @@ Paper trading semi-otomatis untuk **Binance Futures USDⓈ-M**: data **100% live
 > Ini simulasi buat belajar & menguji strategi. Winrate = statistik histori, bukan jaminan profit.
 
 ## Fitur
-- **Scanner**: tombol Scan Now, top 40 koin USDT-M Perp berdasarkan volume. Analisa 15M/1H/4H (EMA9/21, RSI14, MACD, ADX14 Wilder). Grup:
+- **Scanner**: tombol Scan Now, **20 koin market cap besar** (list tetap `CORE_COINS` di `src/lib/binance.ts`: BTC, ETH, BNB, SOL, XRP, DOGE, ADA, TRX, LINK, AVAX, SUI, TON, DOT, LTC, BCH, XLM, HBAR, NEAR, UNI, APT) **+ 5 koin volume tertinggi** Binance di luar list itu (stablecoin dibuang, ditandai 🔥 top vol). Analisa 15M/1H/4H (EMA9/21, RSI14, MACD, ADX14 Wilder). Grup:
   - ⭐ **Golden**: 4H + 1H + 15M qualify penuh semua, arah sama.
   - **3TF searah**, **4H+1H searah**, **1H+15M searah**, **4H+15M searah**: arah tren (EMA9/21) sama di TF itu, minimal satu TF qualify penuh. Chip TF: ✓ qualify penuh · ~ searah · ✗ berlawanan.
   - Tiap kartu langsung menampilkan **Entry (harga live), TP, SL** di leverage yang dipilih lewat input leverage cepat di atas daftar.
   - RSI LONG 40–65, SHORT 35–60. Sinyal dihitung dari candle yang sudah close.
 - **Konteks BTC**: peringatan ⚠️ kalau LONG altcoin saat BTC bearish (dan sebaliknya).
-- **Winrate (opsi C + D)**: per koin kalau ≥ 20 kejadian, kalau kurang ditarik ke rata-rata gabungan 40 koin. Dihitung ulang tiap ganti leverage. TP & SL di candle yang sama = kalah. Ditambah winrate trade lu sendiri.
+- **Winrate (opsi C + D)**: per koin kalau ≥ 20 kejadian, kalau kurang ditarik ke rata-rata gabungan semua koin. Dihitung ulang tiap ganti leverage. TP & SL di candle yang sama = kalah. Ditambah winrate trade lu sendiri.
 - **Filter tambahan (on/off)**: Volume Ratio, EMA200, ATR, Bollinger Bands, Funding/OI/Long-Short. Ada perbandingan winrate dengan vs tanpa tiap filter.
 - **Form order**: LONG/SHORT, Market/Limit, leverage 1–125× bebas, margin nominal tetap atau % saldo. Preview: harga TP (+14%)/SL (−7%) dari margin, jarak %, likuidasi (perkiraan), fee, PnL bersih, winrate minimal biar impas.
 - **Simulasi realistis**: fee Binance (taker 0,05%, maker 0,02%, diskon BNB −10% on/off), funding fee pakai rate asli Binance, TP/SL/likuidasi dicek pakai harga live + candle 1 menit saat app dibuka lagi.
 - **Posisi** (PnL live, tutup manual, boleh dobel posisi di koin yang sama) + **Order Pending**.
 - **TP/SL bisa diatur** (% dari margin): default di Pengaturan, bisa diubah per order. Winrate dihitung ulang sesuai TP/SL.
 - **Trailing TP**: nyentuh TP → posisi tidak ditutup, profit TP dikunci, batas keluar = maks(TP, profit tertinggi − jarak trailing). Form order menampilkan rata-rata hasil backtest TP tetap vs trailing.
-- **🤖 Auto trading (simulasi)**: tiap candle 15m close scan otomatis, buka posisi untuk sinyal ⭐ Golden / 3TF searah yang baru muncul. Syarat: winrate ≥ impas, tidak melawan BTC, tidak sideways (ADX 15m & 1H ≥ 25, Bollinger 1H tidak menyempit), tidak ada peringatan pola SL, lolos filter aktif. Setting terpisah (leverage, margin, TP/SL, trailing), maks posisi, 1 posisi per koin, stop rugi harian (reset 00:00 WIB), log alasan entry/lewati. Jalan selama app terbuka.
+- **🤖 Auto trading (simulasi)**: aktif dari awal, langsung scan saat app dibuka lalu tiap candle 15m close, buka posisi untuk sinyal ⭐ Golden / 3TF searah / 4H+1H (bisa dimatikan) yang baru muncul. Syarat: winrate ≥ impas, tidak melawan BTC, tidak sideways (ADX 15m & 1H ≥ 20), tidak ada peringatan pola SL, lolos filter aktif. Layar dijaga tetap nyala (Wake Lock) selama auto aktif. Setting terpisah (leverage, margin, TP/SL, trailing), maks posisi, 1 posisi per koin, stop rugi harian (reset 00:00 WIB), log alasan entry/lewati. Jalan selama app terbuka.
 - **Riwayat + Audit**: snapshot indikator saat entry & exit, analisa kenapa menang/kalah. Export CSV.
 - **Belajar dari pola**: tiap trade menyimpan pola kondisi saat entry (setup, arah, BTC, ADX, RSI, volume, SL vs ATR, leverage). Kalau sinyal baru mirip pola yang ≥ 3 kali sering kena SL, muncul peringatan ⚠️; kalau mirip pola yang sering kena TP, ditandai ✅. Hanya peringatan, tidak memblokir order.
 - **Statistik**: grafik saldo, winrate asli, rata-rata profit/rugi, profit factor, drawdown, total fee & funding, pola dari trade lu.

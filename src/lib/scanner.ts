@@ -1,4 +1,4 @@
-import { getKlines, getTopSymbols, type Interval } from './binance';
+import { getKlines, getUniverse, type Interval } from './binance';
 import type { SymbolSeries } from './backtest';
 import { btcTrendFrom, buildSeries, classify, evalTF, lastClosedIndex, TFS, type BtcTrend, type Setup, type TF, type TFState } from './signals';
 
@@ -11,6 +11,7 @@ export type ScanRow = {
   price: number;
   change24h: number;
   quoteVolume: number;
+  source?: 'core' | 'volume'; // core = list tetap market cap besar, volume = top volume Binance
   tf: Record<TF, TFState | null>;
   setup: Setup | null;
 };
@@ -38,9 +39,9 @@ export async function loadSymbolSeries(symbol: string, limits = SCAN_LIMITS): Pr
 }
 
 export async function runScan(onProgress: (done: number, total: number) => void): Promise<ScanResult> {
-  const top = await getTopSymbols(40);
+  const top = await getUniverse();
   if (!top.some((t) => t.symbol === 'BTCUSDT')) {
-    top.unshift({ symbol: 'BTCUSDT', lastPrice: 0, priceChangePercent: 0, quoteVolume: 0 });
+    top.unshift({ symbol: 'BTCUSDT', lastPrice: 0, priceChangePercent: 0, quoteVolume: 0, source: 'core' });
   }
   const series: Record<string, SymbolSeries> = {};
   const rows: ScanRow[] = [];
@@ -53,7 +54,7 @@ export async function runScan(onProgress: (done: number, total: number) => void)
         const ss = await loadSymbolSeries(t.symbol);
         series[t.symbol] = ss;
         const tf = statesFrom(ss);
-        rows.push({ symbol: t.symbol, price: t.lastPrice || ss['15m']!.candles.at(-1)!.c, change24h: t.priceChangePercent, quoteVolume: t.quoteVolume, tf, setup: classify(tf) });
+        rows.push({ symbol: t.symbol, price: t.lastPrice || ss['15m']!.candles.at(-1)!.c, change24h: t.priceChangePercent, quoteVolume: t.quoteVolume, source: t.source, tf, setup: classify(tf) });
       } catch {
         failed.push(t.symbol);
       } finally {

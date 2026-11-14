@@ -82,6 +82,8 @@ export type AutoSettings = {
   freshCandles: number; // sinyal boleh di-entry kalau muncul maks N candle 15m terakhir
   ignoreSmallSample: boolean; // abaikan syarat winrate kalau sampel backtest kecil
   minSample: number;
+  with4h1h: boolean; // ikut entry di setup 4H+1H searah (selain Golden & 3TF)
+  wakeLock: boolean; // cegah layar mati selama auto aktif & app terbuka
 };
 
 export type Settings = {
