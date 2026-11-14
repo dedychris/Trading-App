@@ -147,7 +147,7 @@ function AutoBanner() {
       {here ? (
         <span className="text-mute">
           {run.running ? 'Lagi scan & cek sinyal…' : run.nextAt ? `Scan otomatis berikutnya ${new Date(run.nextAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}` : 'Menyiapkan…'}
-          {' '}· ⭐ Golden & 3TF searah · {a.leverage}× · TP {a.tpPct}% / SL {a.slPct}%{a.trailOn ? ` · trailing ${a.trailPct}%` : ''}
+          {' '}· ⭐ Golden & 3TF searah{a.with4h1h ? ' & 4H+1H' : ''} · {a.leverage}× · TP {a.tpPct}% / SL {a.slPct}%{a.trailOn ? ` · trailing ${a.trailPct}%` : ''}
         </span>
       ) : (
         <span className="text-mute">Auto trading jalan di device lain (diatur di Pengaturan).</span>
@@ -206,7 +206,7 @@ export function ScannerPage() {
           {scan.status === 'running' ? `Scanning… ${scan.done}/${scan.total || 40}` : '⚡ Scan Now'}
         </button>
         <div className="text-xs text-mute">
-          Top 40 USDT-M Perp Binance · 15M / 1H / 4H · candle yang sudah close · ✓ qualify penuh · ~ searah · ✗ berlawanan
+          20 koin market cap besar + 5 top volume Binance · 15M / 1H / 4H · candle yang sudah close · ✓ qualify penuh · ~ searah · ✗ berlawanan
           {scan.result && <div>Scan terakhir {fmtTime(scan.result.at)} · {total} koin qualify · winrate dihitung di leverage {settings.leverage}×</div>}
         </div>
       </div>
