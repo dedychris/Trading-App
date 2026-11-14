@@ -71,7 +71,7 @@ function AutoSection() {
             on={a.enabled}
             onChange={(v) => set({ enabled: v })}
             label={<>Auto trading {a.enabled ? <span className="chip ml-1 bg-accent text-black">ON</span> : <span className="chip ml-1 bg-panel2 text-mute">OFF</span>}</>}
-            desc="Langsung scan saat aktif, lalu tiap candle 15m close: buka posisi untuk sinyal ⭐ Golden / 3TF searah yang baru muncul. Koin: 20 market cap besar + 5 top volume. Cuma jalan selama app terbuka."
+            desc="Langsung scan saat aktif, lalu tiap candle 15m close: buka posisi untuk sinyal ⭐ Golden / 3TF searah / 1H+15M searah yang baru muncul. Koin: 20 market cap besar + 5 top volume. Cuma jalan selama app terbuka."
           />
           <Toggle
             on={a.with4h1h}
@@ -126,11 +126,24 @@ function AutoSection() {
               <span className="text-xs text-mute">candle 15m terakhir (2 = ≤ 30 menit)</span>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="w-28">Winrate</span>
-              <input type="checkbox" checked={a.ignoreSmallSample} onChange={(e) => set({ ignoreSmallSample: e.target.checked })} aria-label="Abaikan winrate sampel kecil" />
-              <span className="text-xs">abaikan syarat winrate kalau sampel &lt;</span>
-              <NumInput value={a.minSample} onChange={(v) => set({ minSample: Math.round(v) })} max={200} />
-              <span className="text-xs text-mute">kejadian</span>
+              <span className="w-28">Syarat winrate</span>
+              <input type="checkbox" checked={a.requireWinrate} onChange={(e) => set({ requireWinrate: e.target.checked })} aria-label="Syarat winrate" />
+              <span className="text-xs">{a.requireWinrate ? 'winrate backtest harus ≥ winrate impas' : 'mati — winrate cuma info, tidak memblokir'}</span>
+            </div>
+            {a.requireWinrate && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="w-28" />
+                <input type="checkbox" checked={a.ignoreSmallSample} onChange={(e) => set({ ignoreSmallSample: e.target.checked })} aria-label="Abaikan winrate sampel kecil" />
+                <span className="text-xs">abaikan syarat winrate kalau sampel &lt;</span>
+                <NumInput value={a.minSample} onChange={(v) => set({ minSample: Math.round(v) })} max={200} />
+                <span className="text-xs text-mute">kejadian</span>
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-28">SL per koin</span>
+              <span className="text-xs text-mute">stop koin itu kalau sudah kena SL</span>
+              <NumInput value={a.maxSlPerCoinDay} onChange={(v) => set({ maxSlPerCoinDay: Math.max(0, Math.round(v)) })} max={20} />
+              <span className="text-xs text-mute">× hari ini (0 = mati) · reset 00:00 WIB</span>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="w-28">Maks posisi auto</span>

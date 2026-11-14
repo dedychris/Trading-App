@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { ScanResult } from '../lib/scanner';
 import { feeRate, liqPrice, pnl, SL_PCT, TP_PCT, tpSlPrices } from '../lib/sim';
 import type { Dir } from '../lib/signals';
-import { emptyBook, lockedMargin, uid, walletBalance } from './book';
+import { emptyBook, lockedMargin, migrateSettings, uid, walletBalance } from './book';
 import type { Book, CloseReason, PendingOrder, Position, Settings, Snapshot } from './types';
 
 const KEY = 'msp-book-v1';
@@ -14,7 +14,7 @@ function loadBook(): Book {
       const b = JSON.parse(raw) as Book;
       const d = emptyBook();
       const s0 = { ...d.settings, ...b.settings };
-      return { ...d, ...b, settings: { ...s0, filters: { ...d.settings.filters, ...b.settings?.filters }, auto: { ...d.settings.auto, ...b.settings?.auto } } };
+      return { ...d, ...b, settings: migrateSettings({ ...s0, filters: { ...d.settings.filters, ...b.settings?.filters }, auto: { ...d.settings.auto, rulesV: undefined, ...b.settings?.auto } }) };
     }
   } catch {
     /* data rusak / storage diblokir */
