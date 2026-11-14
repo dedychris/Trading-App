@@ -1,9 +1,9 @@
 // Buku trading: saldo dihitung dari ledger (append-only, id deterministik) supaya
 // sinkron HP <-> laptop aman walaupun dua device menutup posisi yang sama.
 import { START_BALANCE } from '../lib/sim';
-import type { Book, Position, Settings } from './types';
+import type { ArchivedSession, Book, LedgerEntry, Position, Settings } from './types';
 
-export const AUTO_RULES_V = 2;
+export const AUTO_RULES_V = 3;
 
 export const defaultSettings = (): Settings => ({
   theme: typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark',
@@ -12,10 +12,10 @@ export const defaultSettings = (): Settings => ({
   slPct: 7,
   trailOn: true,
   trailPct: 4,
-  auto: { enabled: true, deviceId: null, leverage: 10, marginMode: 'fixed', marginFixed: 100, marginPercent: 2, tpPct: 14, slPct: 7, trailOn: true, trailPct: 4, maxOpen: 3, dailyLossPct: 15, freshCandles: 2, ignoreSmallSample: true, minSample: 10, with4h1h: true, wakeLock: true, requireWinrate: false, maxSlPerCoinDay: 3, rulesV: AUTO_RULES_V },
-  marginMode: 'fixed',
-  marginFixed: 100,
-  marginPercent: 5,
+  auto: { enabled: true, deviceId: null, leverage: 10, marginMode: 'split', marginFixed: 1, marginPercent: 10, tpPct: 14, slPct: 7, trailOn: true, trailPct: 4, maxOpen: 3, dailyLossPct: 15, freshCandles: 2, ignoreSmallSample: true, minSample: 10, with4h1h: true, wakeLock: true, requireWinrate: false, maxSlPerCoinDay: 3, rulesV: AUTO_RULES_V },
+  marginMode: 'percent',
+  marginFixed: 1,
+  marginPercent: 10,
   leverage: 20,
   filters: { volume: false, ema200: false, bollinger: false, atr: false, sentiment: false },
   sound: true,
@@ -23,27 +23,91 @@ export const defaultSettings = (): Settings => ({
   updatedAt: 0,
 });
 
-/** Lengkapi setting auto yang kurang + migrasi aturan lama (v2: stop rugi −15%, syarat winrate mati, maks 3 SL per koin/hari). */
+/**
+ * Lengkapi setting auto yang kurang + migrasi aturan lama.
+ * v2: stop rugi −15%, syarat winrate mati, maks 3 SL per koin/hari.
+ * v3: modal kecil (mis. Rp 150 ribu) + compounding: margin manual = 10% saldo,
+ *     margin auto = saldo dibagi rata ke maks posisi (cuan langsung ikut jadi modal).
+ */
 export function migrateSettings(s: Settings): Settings {
   const d = defaultSettings().auto;
-  const a = { ...d, ...s.auto };
-  if ((s.auto?.rulesV ?? 1) >= AUTO_RULES_V) return { ...s, auto: a };
-  return { ...s, auto: { ...a, dailyLossPct: 15, requireWinrate: false, maxSlPerCoinDay: 3, rulesV: AUTO_RULES_V }, updatedAt: Date.now() };
+  let a = { ...d, ...s.auto };
+  const v = s.auto?.rulesV ?? 1;
+  if (v >= AUTO_RULES_V) return { ...s, auto: a };
+  let out = s;
+  if (v < 2) a = { ...a, dailyLossPct: 15, requireWinrate: false, maxSlPerCoinDay: 3 };
+  if (v < 3) {
+    a = { ...a, marginMode: 'split', marginPercent: 10 };
+    out = { ...out, marginMode: 'percent', marginPercent: 10 };
+  }
+  return { ...out, auto: { ...a, rulesV: AUTO_RULES_V }, updatedAt: Date.now() };
 }
 
-export const emptyBook = (epoch = 1): Book => ({
+export type SessionStart = { startBalance?: number; startIdr?: number; idrRate?: number };
+
+export const emptyBook = (epoch = 1, start: SessionStart = {}): Book => ({
   epoch,
   epochStartedAt: Date.now(),
+  ...(start.startBalance !== undefined ? { startBalance: start.startBalance } : {}),
+  ...(start.startIdr !== undefined ? { startIdr: start.startIdr } : {}),
+  ...(start.idrRate !== undefined ? { idrRate: start.idrRate } : {}),
   positions: {},
   orders: {},
   ledger: {},
   settings: defaultSettings(),
 });
 
+/** Saldo awal sesi ini (USDT). Sesi lama tanpa angka = 10.000. */
+export const startBalanceOf = (b: { startBalance?: number }) => b.startBalance ?? START_BALANCE;
+
 export function walletBalance(b: Book) {
-  let s = START_BALANCE;
+  let s = startBalanceOf(b);
   for (const e of Object.values(b.ledger)) s += e.amt;
   return s;
+}
+
+/** Ambil trade yang sudah selesai + ledger-nya dari sesi ini, untuk disimpan di arsip. */
+export function sessionArchive(b: Book, endedAt = Date.now()): ArchivedSession {
+  const positions: Record<string, Position> = {};
+  for (const [id, p] of Object.entries(b.positions)) if (p.status === 'closed') positions[id] = p;
+  const ledger: Record<string, LedgerEntry> = {};
+  for (const [id, e] of Object.entries(b.ledger)) if (positions[e.posId]) ledger[id] = e;
+  return {
+    epoch: b.epoch,
+    startedAt: b.epochStartedAt,
+    endedAt,
+    startBalance: startBalanceOf(b),
+    ...(b.startIdr !== undefined ? { startIdr: b.startIdr } : {}),
+    ...(b.idrRate !== undefined ? { idrRate: b.idrRate } : {}),
+    positions,
+    ledger,
+  };
+}
+
+/** Arsip dalam bentuk Book (read-only) supaya fungsi ledger/riwayat bisa dipakai ulang. */
+export function archiveAsBook(a: ArchivedSession, settings: Settings): Book {
+  return { epoch: a.epoch, epochStartedAt: a.startedAt, startBalance: a.startBalance, startIdr: a.startIdr, idrRate: a.idrRate, positions: a.positions, orders: {}, ledger: a.ledger, settings };
+}
+
+/** Arsip urut terbaru dulu. */
+export const archiveList = (b: Book) => Object.values(b.archives ?? {}).sort((x, y) => y.epoch - x.epoch);
+
+export type LearnTrade = { p: Position; net: number };
+const learnCache = new WeakMap<Book, LearnTrade[]>();
+/** Semua trade selesai untuk bahan belajar pola: sesi sekarang + semua arsip. */
+export function learningTrades(b: Book): LearnTrade[] {
+  const hit = learnCache.get(b);
+  if (hit) return hit;
+  const out: LearnTrade[] = [];
+  const add = (positions: Record<string, Position>, ledger: Record<string, LedgerEntry>) => {
+    const net: Record<string, number> = {};
+    for (const e of Object.values(ledger)) net[e.posId] = (net[e.posId] ?? 0) + e.amt;
+    for (const p of Object.values(positions)) if (p.status === 'closed') out.push({ p, net: net[p.id] ?? 0 });
+  };
+  add(b.positions, b.ledger);
+  for (const a of Object.values(b.archives ?? {})) add(a.positions, a.ledger);
+  learnCache.set(b, out);
+  return out;
 }
 
 export function lockedMargin(b: Book) {
@@ -82,11 +146,41 @@ function mergePos(a: Position, b: Position): Position {
 
 const ORDER_RANK = { pending: 0, cancelled: 1, filled: 2 } as const;
 
+function mergePositions(a: Record<string, Position>, b: Record<string, Position>) {
+  const positions = { ...a };
+  for (const [id, p] of Object.entries(b)) positions[id] = positions[id] ? mergePos(positions[id], p) : p;
+  return positions;
+}
+
+function mergeArchive(a: ArchivedSession | undefined, b: ArchivedSession): ArchivedSession {
+  if (!a) return b;
+  return {
+    ...a,
+    startedAt: Math.min(a.startedAt, b.startedAt),
+    endedAt: Math.max(a.endedAt, b.endedAt),
+    positions: mergePositions(a.positions, b.positions),
+    ledger: { ...a.ledger, ...b.ledger },
+  };
+}
+
+function mergeArchives(a: Book['archives'], b: Book['archives']) {
+  const out: Record<string, ArchivedSession> = { ...(a ?? {}) };
+  for (const [k, x] of Object.entries(b ?? {})) out[k] = mergeArchive(out[k], x);
+  return out;
+}
+
 /** Gabungkan dua versi buku (lokal & cloud). Idempoten & deterministik. */
 export function mergeBooks(a: Book, b: Book): Book {
-  if (a.epoch !== b.epoch) return a.epoch > b.epoch ? { ...a, settings: migrateSettings(newer(a.settings, b.settings)) } : { ...b, settings: migrateSettings(newer(a.settings, b.settings)) };
-  const positions = { ...a.positions };
-  for (const [id, p] of Object.entries(b.positions)) positions[id] = positions[id] ? mergePos(positions[id], p) : p;
+  const archives = mergeArchives(a.archives, b.archives);
+  const withArch = (x: Book): Book => (Object.keys(archives).length ? { ...x, archives } : x);
+  if (a.epoch !== b.epoch) {
+    const [win, lose] = a.epoch > b.epoch ? [a, b] : [b, a];
+    // device yang belum tahu ada sesi baru: trade selesainya ikut masuk arsip sesi lamanya
+    const k = String(lose.epoch);
+    if (archives[k]) archives[k] = mergeArchive(archives[k], sessionArchive(lose, archives[k].endedAt));
+    return { ...withArch(win), settings: migrateSettings(newer(a.settings, b.settings)) };
+  }
+  const positions = mergePositions(a.positions, b.positions);
   const orders = { ...a.orders };
   for (const [id, o] of Object.entries(b.orders)) {
     const cur = orders[id];
@@ -94,14 +188,20 @@ export function mergeBooks(a: Book, b: Book): Book {
     else if (ORDER_RANK[o.status] !== ORDER_RANK[cur.status]) orders[id] = ORDER_RANK[o.status] > ORDER_RANK[cur.status] ? o : cur;
     else orders[id] = newer(cur, o);
   }
-  return {
+  const startBalance = a.startBalance ?? b.startBalance;
+  const startIdr = a.startIdr ?? b.startIdr;
+  const idrRate = a.idrRate ?? b.idrRate;
+  return withArch({
     epoch: a.epoch,
     epochStartedAt: Math.min(a.epochStartedAt, b.epochStartedAt),
+    ...(startBalance !== undefined ? { startBalance } : {}),
+    ...(startIdr !== undefined ? { startIdr } : {}),
+    ...(idrRate !== undefined ? { idrRate } : {}),
     positions,
     orders,
     ledger: { ...a.ledger, ...b.ledger },
     settings: migrateSettings(newer(a.settings, b.settings)),
-  };
+  });
 }
 
 export function uid() {

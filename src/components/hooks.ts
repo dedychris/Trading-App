@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { winrate, type ActiveFilters, type Winrate } from '../lib/backtest';
 import type { Dir, SetupKey } from '../lib/signals';
 import { useApp } from '../store/app';
-import { positionLedger } from '../store/book';
+import { learningTrades } from '../store/book';
 
 export function useActiveFilters(): ActiveFilters {
   const f = useApp((s) => s.book.settings.filters);
@@ -26,10 +26,10 @@ export function useMyWinrate(key: SetupKey | undefined, dir: Dir | undefined) {
   return useMemo(() => {
     let w = 0;
     let n = 0;
-    for (const p of Object.values(book.positions)) {
-      if (p.status !== 'closed' || !key || p.snapEntry?.setup?.key !== key || p.dir !== dir) continue;
+    for (const { p, net } of learningTrades(book)) {
+      if (!key || p.snapEntry?.setup?.key !== key || p.dir !== dir) continue;
       n++;
-      if (positionLedger(book, p.id).net > 0) w++;
+      if (net > 0) w++;
     }
     return { w, n };
   }, [book, key, dir]);

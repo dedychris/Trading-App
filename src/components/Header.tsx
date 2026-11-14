@@ -2,7 +2,7 @@ import { useApp } from '../store/app';
 import { lockedMargin, walletBalance } from '../store/book';
 import { pnl } from '../lib/sim';
 import { fmtUsd } from '../lib/format';
-import { Signed } from './ui';
+import { Idr, Signed } from './ui';
 
 export function useEquity() {
   const book = useApp((s) => s.book);
@@ -43,6 +43,7 @@ export function Header() {
         <div className="ml-auto text-right leading-tight">
           <div className="text-[10px] uppercase tracking-wider text-mute">Equity (paper)</div>
           <div className="num text-sm font-bold">{fmtUsd(equity)} <span className="text-mute font-normal">USDT</span></div>
+          <Idr v={equity} prefix="" className="block text-[11px] font-semibold text-ink/80" />
           <div className="text-[10px] text-mute num">
             tersedia {fmtUsd(available)} · uPnL <Signed v={upnl}>{fmtUsd(upnl, true)}</Signed>
           </div>

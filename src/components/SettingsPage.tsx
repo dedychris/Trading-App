@@ -1,13 +1,15 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { FILTER_INFO, FILTER_KEYS } from '../lib/signals';
-import { FEE, START_BALANCE } from '../lib/sim';
+import { FEE } from '../lib/sim';
 import { requestNotifyPermission } from '../lib/notify';
-import { resetAccount, useApp } from '../store/app';
+import { getIdrRate } from '../lib/binance';
+import { marginFor, startNewSession, useApp } from '../store/app';
+import { archiveList, startBalanceOf, walletBalance } from '../store/book';
 import { signInGoogle, signOut, syncConfigured, syncNow } from '../store/sync';
-import { fmtNum, fmtPct, fmtTime, fmtUsd } from '../lib/format';
+import { fmtIdr, fmtNum, fmtPct, fmtTime, fmtUsd, parseIdr } from '../lib/format';
 import { previewOrder } from '../lib/sim';
-import { deviceId, todayPnl } from '../store/autotrader';
-import { Signed } from './ui';
+import { autoMargin, deviceId, todayPnl } from '../store/autotrader';
+import { Idr, Signed } from './ui';
 
 function Toggle({ on, onChange, label, desc }: { on: boolean; onChange: (v: boolean) => void; label: ReactNode; desc?: ReactNode }) {
   return (
@@ -59,7 +61,10 @@ function AutoSection() {
   const update = useApp((x) => x.updateSettings);
   const set = (p: Partial<typeof a>) => update({ auto: { ...a, ...p } });
   const me = deviceId();
-  const margin = a.marginMode === 'fixed' ? a.marginFixed : 100;
+  const book = useApp((x) => x.book);
+  const wallet = walletBalance(book);
+  // split: tampilkan jatah per slot dari saldo (bukan sisa tersedia saat ini)
+  const margin = (a.marginMode === 'split' ? wallet / Math.max(1, a.maxOpen) : autoMargin(a, book)) || 100;
   const pv = previewOrder({ dir: 'LONG', entry: 100, leverage: a.leverage, margin, entryType: 'market', bnb, tpPct: a.tpPct, slPct: a.slPct });
   const today = todayPnl();
   return (
@@ -100,11 +105,20 @@ function AutoSection() {
             <div className="flex flex-wrap items-center gap-2">
               <span className="w-28">Margin</span>
               <div className="seg">
-                <button data-on={a.marginMode === 'fixed'} onClick={() => set({ marginMode: 'fixed' })} className="!py-1 !text-xs">USDT</button>
+                <button data-on={a.marginMode === 'split'} onClick={() => set({ marginMode: 'split' })} className="!py-1 !text-xs">Bagi rata</button>
                 <button data-on={a.marginMode === 'percent'} onClick={() => set({ marginMode: 'percent' })} className="!py-1 !text-xs">% saldo</button>
+                <button data-on={a.marginMode === 'fixed'} onClick={() => set({ marginMode: 'fixed' })} className="!py-1 !text-xs">USDT</button>
               </div>
-              {a.marginMode === 'fixed' ? <NumInput value={a.marginFixed} onChange={(v) => set({ marginFixed: v })} max={1e9} /> : <NumInput value={a.marginPercent} onChange={(v) => set({ marginPercent: v })} max={100} />}
-              <span className="text-xs text-mute">{a.marginMode === 'fixed' ? 'USDT' : '% saldo'}</span>
+              {a.marginMode === 'fixed' && <NumInput value={a.marginFixed} onChange={(v) => set({ marginFixed: v })} max={1e9} />}
+              {a.marginMode === 'percent' && <NumInput value={a.marginPercent} onChange={(v) => set({ marginPercent: v })} max={100} />}
+              <span className="text-xs text-mute">{a.marginMode === 'fixed' ? 'USDT' : a.marginMode === 'percent' ? '% saldo' : `saldo ÷ ${a.maxOpen} posisi`} = {fmtUsd(margin)} USDT<Idr v={margin} prefix=" ≈ " /></span>
+            </div>
+            <div className="-mt-1 text-xs text-mute">
+              {a.marginMode === 'split'
+                ? `Compounding, modal terpakai penuh: saldo dibagi rata ke maks ${a.maxOpen} posisi auto. Cuan langsung ikut jadi modal trade berikutnya, rugi → margin ikut mengecil.`
+                : a.marginMode === 'percent'
+                  ? 'Compounding: margin ikut saldo sekarang, cuan langsung ikut jadi modal.'
+                  : 'Nominal tetap, tidak compounding.'}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="w-28">TP / SL</span>
@@ -160,10 +174,11 @@ function AutoSection() {
         </div>
         <div className="space-y-3 py-2 text-sm">
           <div className="rounded-lg bg-panel2 p-3 text-xs">
-            <div className="label mb-1">Hitungan per trade ({a.leverage}×{a.marginMode === 'fixed' ? `, margin ${fmtUsd(margin)}` : ', per 100 USDT margin'})</div>
+            <div className="label mb-1">Hitungan per trade ({a.leverage}×, margin {fmtUsd(margin)} USDT<Idr v={margin} prefix=" ≈ " />)</div>
             <div>Harga harus gerak: TP <b className="num">{fmtNum(pv.tpMovePct, 2)}%</b> · SL <b className="num">{fmtNum(pv.slMovePct, 2)}%</b></div>
             <div>Fee buka + tutup ±<b className="num">{fmtUsd(pv.feeOpen + pv.feeClose)}</b> USDT ({fmtNum(((pv.feeOpen + pv.feeClose) / margin) * 100, 1)}% margin)</div>
-            <div>Bersih kalau TP <span className="text-up num">{fmtUsd(pv.netWin, true)}</span> · kalau SL <span className="text-down num">{fmtUsd(pv.netLoss, true)}</span></div>
+            <div>Bersih kalau TP <span className="text-up num">{fmtUsd(pv.netWin, true)}</span><Idr v={pv.netWin} sign prefix=" (" suffix=")" className="text-up" /> · kalau SL <span className="text-down num">{fmtUsd(pv.netLoss, true)}</span><Idr v={pv.netLoss} sign prefix=" (" suffix=")" className="text-down" /></div>
+            <div>Nilai posisi {fmtUsd(margin * a.leverage)} USDT — Binance menolak di bawah ±5 USDT (BTC/ETH lebih besar); auto melewati koin yang kurang.</div>
             <div>Winrate minimal biar impas: <b className="num">{fmtPct(pv.breakevenWinrate, 0)}</b></div>
             {pv.netWin <= (pv.feeOpen + pv.feeClose) * 2 && <div className="mt-1 text-warn">⚠️ TP terlalu kecil dibanding fee.</div>}
           </div>
@@ -190,6 +205,96 @@ function AutoSection() {
   );
 }
 
+function AccountSection() {
+  const book = useApp((x) => x.book);
+  const nOpen = Object.values(book.positions).filter((p) => p.status === 'open').length;
+  const nPending = Object.values(book.orders).filter((o) => o.status === 'pending').length;
+  const nClosed = Object.values(book.positions).filter((p) => p.status === 'closed').length;
+  const archives = archiveList(book);
+  const [cur, setCur] = useState<'idr' | 'usdt'>('idr');
+  const [amount, setAmount] = useState('150.000');
+  const [rateStr, setRateStr] = useState('');
+  const [rateInfo, setRateInfo] = useState<string>('mengambil kurs…');
+  const [confirm, setConfirm] = useState(false);
+  const loadRate = () => {
+    setRateInfo('mengambil kurs…');
+    getIdrRate()
+      .then((r) => {
+        setRateStr(String(Math.round(r.rate)));
+        setRateInfo(`kurs live ${r.source}`);
+      })
+      .catch(() => {
+        setRateStr((x) => x || (book.idrRate ? String(Math.round(book.idrRate)) : ''));
+        setRateInfo('kurs live gagal diambil — isi manual');
+      });
+  };
+  useEffect(loadRate, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const rate = +rateStr.replace(/\./g, '').replace(',', '.');
+  const val = cur === 'idr' ? parseIdr(amount) : +amount.replace(',', '.');
+  const usdt = cur === 'idr' ? (rate > 0 ? val / rate : NaN) : val;
+  const idr = cur === 'idr' ? val : rate > 0 ? val * rate : undefined;
+  const err = !(val > 0) ? 'Isi saldo awal' : cur === 'idr' && !(rate > 1000) ? 'Isi kurs Rupiah per USDT' : !(usdt >= 1) ? 'Saldo awal minimal setara 1 USDT' : null;
+  const start = startBalanceOf(book);
+  const go = () => {
+    const r = startNewSession({ startBalance: +usdt.toFixed(4), ...(idr ? { startIdr: Math.round(idr) } : {}), ...(rate > 1000 ? { idrRate: rate } : {}) });
+    setConfirm(false);
+    const parts = [`Sesi baru dimulai: ${idr ? fmtIdr(idr) + ' ≈ ' : ''}${fmtUsd(usdt)} USDT`];
+    if (r.archived) parts.push(`${r.archived} trade lama disimpan di arsip`);
+    if (r.dropped) parts.push(`${r.dropped} posisi tanpa harga live tidak ikut diarsip`);
+    useApp.getState().toast(parts.join(' · '), 'good');
+  };
+  return (
+    <Section title="Akun paper trading">
+      <div className="space-y-1 py-2 text-sm">
+        <div>
+          Sesi {book.epoch} · mulai <b className="num">{book.startIdr ? `${fmtIdr(book.startIdr)} (${fmtUsd(start)} USDT)` : `${fmtUsd(start)} USDT`}</b>
+          <span className="text-mute"> · {fmtTime(book.epochStartedAt)}</span>
+        </div>
+        <div className="text-xs text-mute num">
+          Saldo sekarang {fmtUsd(walletBalance(book))} USDT<Idr v={walletBalance(book)} prefix=" ≈ " /> · {nClosed} trade selesai
+          {book.idrRate ? <> · kurs dikunci Rp {Math.round(book.idrRate).toLocaleString('id-ID')}/USDT</> : null}
+        </div>
+        {archives.length > 0 && (
+          <div className="text-xs text-mute">📦 Arsip: {archives.map((a) => `sesi ${a.epoch} (${Object.keys(a.positions).length} trade)`).join(', ')} — tetap dipakai untuk belajar pola.</div>
+        )}
+      </div>
+      <div className="space-y-3 py-3">
+        <div className="text-sm font-medium">Mulai sesi baru</div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="seg">
+            <button data-on={cur === 'idr'} onClick={() => { setCur('idr'); setAmount('150.000'); }} className="!py-1 !text-xs">Rupiah</button>
+            <button data-on={cur === 'usdt'} onClick={() => { setCur('usdt'); setAmount(usdt > 0 ? String(+usdt.toFixed(2)) : '10'); }} className="!py-1 !text-xs">USDT</button>
+          </div>
+          <input className="input max-w-[160px]" inputMode="decimal" aria-label="Saldo awal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <span className="text-sm text-mute">{cur === 'idr' ? 'Rp' : 'USDT'}</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-xs text-mute">Kurs Rp / USDT</span>
+          <input className="input w-28 !py-1" inputMode="numeric" aria-label="Kurs Rupiah" value={rateStr} onChange={(e) => setRateStr(e.target.value)} />
+          <button className="btn-ghost !py-1 !text-xs" onClick={loadRate}>↻</button>
+          <span className="text-[11px] text-mute">{rateInfo}</span>
+        </div>
+        <div className="text-xs num">
+          {err ? <span className="text-down">{err}</span> : <>Saldo awal: <b>{fmtUsd(usdt)} USDT</b>{idr ? <> ≈ <b>{fmtIdr(idr)}</b></> : null} <span className="text-mute">· hitungan tetap USDT, Rupiah pakai kurs ini (dikunci selama sesi)</span></>}
+        </div>
+        <div className="text-xs text-mute">
+          Riwayat sesi sekarang <b>tidak dihapus</b>: disimpan di arsip (lihat Riwayat → pilih sesi) dan tetap dipakai untuk peringatan pola.
+          {nOpen > 0 && <> {nOpen} posisi terbuka akan ditutup di harga sekarang.</>}
+          {nPending > 0 && <> {nPending} order pending dibatalkan.</>} Pengaturan tetap.
+        </div>
+        {!confirm ? (
+          <button className="btn-primary" disabled={Boolean(err)} onClick={() => setConfirm(true)}>Mulai sesi baru</button>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            <button className="btn-ghost" onClick={() => setConfirm(false)}>Batal</button>
+            <button className="btn-primary" onClick={go}>Ya, mulai dari {idr ? fmtIdr(idr) : `${fmtUsd(usdt)} USDT`}</button>
+          </div>
+        )}
+      </div>
+    </Section>
+  );
+}
+
 type BIPEvent = Event & { prompt: () => Promise<void> };
 let deferredInstall: BIPEvent | null = null;
 window.addEventListener('beforeinstallprompt', (e) => {
@@ -201,7 +306,7 @@ export function SettingsPage() {
   const s = useApp((x) => x.book.settings);
   const update = useApp((x) => x.updateSettings);
   const sync = useApp((x) => x.sync);
-  const [confirmReset, setConfirmReset] = useState(false);
+  const book = useApp((x) => x.book);
   const [canInstall, setCanInstall] = useState(Boolean(deferredInstall));
   useEffect(() => {
     const h = () => setCanInstall(true);
@@ -211,6 +316,8 @@ export function SettingsPage() {
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
+      <AccountSection />
+
       <Section title="Tampilan">
         <div className="py-2">
           <div className="seg max-w-xs">
@@ -240,6 +347,7 @@ export function SettingsPage() {
                 <><input className="input max-w-[100px]" inputMode="decimal" value={s.marginPercent} onChange={(e) => update({ marginPercent: +e.target.value.replace(',', '.') || 0 })} /><span className="text-sm text-mute">% dari saldo</span></>
               )}
             </div>
+            <div className="mt-1 text-xs text-mute num">= {fmtUsd(marginFor(s, book))} USDT per trade sekarang<Idr v={marginFor(s, book)} prefix=" ≈ " /></div>
             <div className="mt-1 text-xs text-mute">
               {s.marginMode === 'fixed' ? 'Tiap trade selalu pakai nominal yang sama, mau saldo naik atau turun.' : 'Margin ikut menyesuaikan saldo: saldo turun → margin ikut kecil. Lebih aman.'}
             </div>
@@ -328,19 +436,6 @@ export function SettingsPage() {
         </div>
       </Section>
 
-      <Section title="Akun paper trading">
-        <div className="space-y-2 py-2">
-          <div className="text-sm text-mute">Reset menghapus semua posisi, order, dan riwayat, lalu saldo kembali ke {START_BALANCE.toLocaleString('id-ID')} USDT. Pengaturan tetap.</div>
-          {!confirmReset ? (
-            <button className="btn-ghost text-down" onClick={() => setConfirmReset(true)}>Reset saldo ke {START_BALANCE.toLocaleString('id-ID')} USDT</button>
-          ) : (
-            <div className="flex gap-2">
-              <button className="btn-ghost" onClick={() => setConfirmReset(false)}>Batal</button>
-              <button className="btn-down" onClick={() => { resetAccount(); setConfirmReset(false); useApp.getState().toast('Akun direset', 'info'); }}>Ya, hapus semua & reset</button>
-            </div>
-          )}
-        </div>
-      </Section>
     </div>
   );
 }

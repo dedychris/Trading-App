@@ -1,7 +1,15 @@
 import { useEffect, type ReactNode } from 'react';
 import type { Dir } from '../lib/signals';
 import { useApp } from '../store/app';
-import { fmtPct } from '../lib/format';
+import { fmtIdr, fmtPct } from '../lib/format';
+
+/** Nilai Rupiah dari angka USDT, pakai kurs yang dikunci saat sesi dimulai. Kosong kalau sesi tanpa kurs. */
+export function Idr({ v, sign, rate, className = '', prefix = '≈ ', suffix = '' }: { v: number | null | undefined; sign?: boolean; rate?: number; className?: string; prefix?: string; suffix?: string }) {
+  const bookRate = useApp((s) => s.book.idrRate);
+  const r = rate ?? bookRate;
+  if (!r || v === null || v === undefined || !Number.isFinite(v)) return null;
+  return <span className={`num ${className}`}>{prefix}{fmtIdr(v * r, sign)}{suffix}</span>;
+}
 
 export function DirBadge({ dir, size = 'sm' }: { dir: Dir; size?: 'sm' | 'md' }) {
   return (

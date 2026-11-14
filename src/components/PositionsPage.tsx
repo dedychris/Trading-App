@@ -6,7 +6,7 @@ import { cancelOrder, useApp } from '../store/app';
 import { positionLedger } from '../store/book';
 import { manualClose } from '../store/engine';
 import type { Position } from '../store/types';
-import { DirBadge, Empty, Signed } from './ui';
+import { DirBadge, Empty, Idr, Signed } from './ui';
 import { useFlash } from './hooks';
 
 function PositionCard({ p }: { p: Position }) {
@@ -38,6 +38,7 @@ function PositionCard({ p }: { p: Position }) {
           <div className="text-[11px] text-mute">PnL belum terealisasi</div>
           <span key={fU.key} className={`inline-block px-0.5 ${fU.cls}`}><Signed v={u} className="text-xl font-bold">{fmtUsd(u, true)}</Signed></span>
           <Signed v={roe} className="ml-2 text-sm">{fmtPct(roe, 2, true)}</Signed>
+          <Idr v={u} sign className="block text-[11px] text-mute" />
         </div>
         <div className="text-right text-xs text-mute num">
           <div>fee {fmtUsd(led.fee)}</div>
@@ -68,7 +69,7 @@ function PositionCard({ p }: { p: Position }) {
       <div className="mt-2 grid grid-cols-4 gap-2 text-[11px] num">
         <div><div className="text-mute">Entry</div>{fmtPrice(p.entry)}</div>
         <div><div className="text-mute">Harga</div><span key={fPx.key} className={`-mx-0.5 inline-block px-0.5 ${fPx.cls}`}>{fmtPrice(px)}</span></div>
-        <div><div className="text-mute">Margin</div>{fmtUsd(p.margin)}</div>
+        <div><div className="text-mute">Margin</div>{fmtUsd(p.margin)}<Idr v={p.margin} prefix="" className="block text-mute" /></div>
         <div><div className="text-mute">Likuidasi</div><span className="text-warn">{fmtPrice(p.liq)}</span></div>
       </div>
       <div className="mt-3">

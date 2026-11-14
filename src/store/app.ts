@@ -1,8 +1,10 @@
 import { create } from 'zustand';
+import { minNotional } from '../lib/binance';
 import type { ScanResult } from '../lib/scanner';
+import { fmtUsd } from '../lib/format';
 import { feeRate, liqPrice, pnl, SL_PCT, TP_PCT, tpSlPrices } from '../lib/sim';
 import type { Dir } from '../lib/signals';
-import { emptyBook, lockedMargin, migrateSettings, uid, walletBalance } from './book';
+import { emptyBook, lockedMargin, migrateSettings, sessionArchive, uid, walletBalance, type SessionStart } from './book';
 import type { Book, CloseReason, PendingOrder, Position, Settings, Snapshot } from './types';
 
 const KEY = 'msp-book-v1';
@@ -98,8 +100,10 @@ export function validateOrder(p: OpenParams, marketPrice: number | undefined): s
   const b = useApp.getState().book;
   if (!(p.margin > 0)) return 'Margin harus lebih dari 0';
   if (!(p.leverage >= 1 && p.leverage <= 125)) return 'Leverage 1–125×';
-  if (p.margin > availableBalance(b) + 1e-9) return `Saldo tersedia tidak cukup (${availableBalance(b).toFixed(2)} USDT)`;
+  if (p.margin > availableBalance(b) + 1e-9) return `Saldo tersedia tidak cukup (${fmtUsd(availableBalance(b))} USDT)`;
   if (!(p.price > 0)) return 'Harga tidak valid';
+  const minN = minNotional(p.symbol, p.price);
+  if (p.margin * p.leverage < minN - 1e-9) return `Nilai posisi ${fmtUsd(p.margin * p.leverage)} USDT di bawah minimal Binance ${fmtUsd(minN)} USDT untuk koin ini. Naikkan margin ke ≥ ${fmtUsd(minN / p.leverage)} USDT atau naikkan leverage.`;
   if (p.tpPct !== undefined && !(p.tpPct > 0)) return 'TP % harus lebih dari 0';
   if (p.slPct !== undefined && !(p.slPct > 0 && p.slPct < 100)) return 'SL % harus antara 0 dan 100 (100% = likuidasi)';
   if (p.trailPct !== undefined && p.trailPct !== null && !(p.trailPct > 0)) return 'Jarak trailing harus lebih dari 0';
@@ -201,8 +205,27 @@ export function addFunding(posId: string, fundingTime: number, amt: number) {
   mutate((b) => (b.ledger[key] ? b : { ...b, ledger: { ...b.ledger, [key]: { id: key, t: fundingTime, amt, kind: 'funding', posId } } }));
 }
 
-export function resetAccount() {
+/**
+ * Mulai sesi paper trading baru dengan saldo awal pilihan. Sesi sekarang TIDAK dihapus:
+ * posisi terbuka ditutup di harga live, order pending dibatalkan, lalu semua trade selesai
+ * + ledger-nya disimpan di arsip (tetap dipakai untuk belajar pola).
+ */
+export function startNewSession(start: Required<Pick<SessionStart, 'startBalance'>> & SessionStart) {
+  const st = useApp.getState();
+  let closed = 0;
+  let dropped = 0;
+  for (const p of Object.values(st.book.positions)) {
+    if (p.status !== 'open') continue;
+    const px = st.prices[p.symbol];
+    if (px && closePosition(p.id, px, 'MANUAL')) closed++;
+    else dropped++;
+  }
+  for (const o of Object.values(useApp.getState().book.orders)) if (o.status === 'pending') cancelOrder(o.id);
   const b = useApp.getState().book;
-  const fresh = emptyBook(b.epoch + 1);
-  useApp.setState({ book: { ...fresh, settings: { ...b.settings, updatedAt: Date.now() } } });
+  const now = Date.now();
+  const arch = sessionArchive(b, now);
+  const fresh = emptyBook(b.epoch + 1, start);
+  const archives = Object.keys(arch.positions).length ? { ...(b.archives ?? {}), [String(b.epoch)]: arch } : b.archives;
+  useApp.setState({ book: { ...fresh, ...(archives ? { archives } : {}), settings: { ...b.settings, updatedAt: now } }, autoDecision: {} });
+  return { archived: Object.keys(arch.positions).length, closed, dropped };
 }

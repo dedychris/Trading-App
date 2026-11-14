@@ -54,14 +54,87 @@ async function raw(path: string, params: Record<string, string | number | undefi
     return (data as unknown[][]).map((x) => [x[0], +(x[1] as string), +(x[2] as string), +(x[3] as string), +(x[4] as string), +(x[5] as string)]);
   }
   if (path === '/fapi/v1/exchangeInfo') {
-    const info = data as { symbols: { symbol: string; contractType: string; quoteAsset: string; status: string }[] };
-    return {
-      symbols: info.symbols
-        .filter((s) => s.contractType === 'PERPETUAL' && s.quoteAsset === 'USDT' && s.status === 'TRADING')
-        .map((s) => s.symbol),
-    };
+    type Filter = { filterType: string; notional?: string; minQty?: string };
+    const info = data as { symbols: { symbol: string; contractType: string; quoteAsset: string; status: string; filters?: Filter[] }[] };
+    const list = info.symbols.filter((s) => s.contractType === 'PERPETUAL' && s.quoteAsset === 'USDT' && s.status === 'TRADING');
+    const rules: Record<string, [number, number]> = {};
+    for (const s of list) {
+      const f = (t: string) => s.filters?.find((x) => x.filterType === t);
+      rules[s.symbol] = [+(f('MIN_NOTIONAL')?.notional ?? 0), Math.max(+(f('LOT_SIZE')?.minQty ?? 0), +(f('MARKET_LOT_SIZE')?.minQty ?? 0))];
+    }
+    return { symbols: list.map((s) => s.symbol), rules };
   }
   return data;
+}
+
+// ===== Aturan order minimal Binance (MIN_NOTIONAL & LOT_SIZE) =====
+export type SymbolRule = [minNotional: number, minQty: number];
+type ExchangeInfo = { symbols: string[]; rules?: Record<string, SymbolRule> };
+/** Dipakai kalau aturan dari Binance belum termuat: minimal nilai posisi umum di Binance Futures. */
+export const DEFAULT_MIN_NOTIONAL = 5;
+const RULES_KEY = 'msp-symbol-rules';
+let symbolRules: Record<string, SymbolRule> = (() => {
+  try {
+    return JSON.parse(localStorage.getItem(RULES_KEY) || '{}');
+  } catch {
+    return {};
+  }
+})();
+
+function rememberRules(info: ExchangeInfo) {
+  if (!info.rules || !Object.keys(info.rules).length) return;
+  symbolRules = info.rules;
+  try {
+    localStorage.setItem(RULES_KEY, JSON.stringify(info.rules));
+  } catch {
+    /* storage penuh/diblokir */
+  }
+}
+
+async function exchangeInfo(): Promise<ExchangeInfo> {
+  const info = (await limited(() => raw('/fapi/v1/exchangeInfo'))) as ExchangeInfo;
+  rememberRules(info);
+  return info;
+}
+
+/** Muat aturan order minimal (sekali di awal; scan juga memperbarui). */
+export function loadSymbolRules() {
+  return exchangeInfo().catch(() => null);
+}
+
+/** Untuk test. */
+export function setSymbolRules(r: Record<string, SymbolRule>) {
+  symbolRules = r;
+}
+
+/**
+ * Nilai posisi (margin × leverage, USDT) minimal yang diterima Binance untuk koin ini di harga ini:
+ * maks(MIN_NOTIONAL, qty minimal × harga).
+ */
+export function minNotional(symbol: string, price: number) {
+  const r = symbolRules[symbol];
+  if (!r) return DEFAULT_MIN_NOTIONAL;
+  return Math.max(r[0] || 0, (r[1] || 0) * (price > 0 ? price : 0));
+}
+
+// ===== Kurs USDT → Rupiah =====
+export type IdrRate = { rate: number; source: string };
+/** Kurs live Rp per 1 USDT. Lewat proxy (Indodax), kalau gagal langsung ke kurs USD/IDR publik. */
+export async function getIdrRate(): Promise<IdrRate> {
+  try {
+    const r = await fetch('/api/binance?p=/idr');
+    if (r.ok && (r.headers.get('content-type') || '').includes('json')) {
+      const j = (await r.json()) as IdrRate;
+      if (j.rate > 1000) return j;
+    }
+  } catch {
+    /* coba langsung */
+  }
+  const r = await fetch('https://open.er-api.com/v6/latest/USD');
+  const j = (await r.json()) as { rates?: { IDR?: number } };
+  const rate = +(j.rates?.IDR ?? 0);
+  if (!(rate > 1000)) throw new Error('kurs Rupiah tidak tersedia');
+  return { rate, source: 'kurs USD/IDR' };
 }
 
 // Batasi request paralel supaya tidak kena rate limit Binance
@@ -121,7 +194,7 @@ export async function getUniverse(extra = EXTRA_TOP_VOLUME): Promise<UniverseCoi
 
 export async function getTopSymbols(n = 40): Promise<Ticker24h[]> {
   const [info, tickers] = await Promise.all([
-    limited(() => raw('/fapi/v1/exchangeInfo')) as Promise<{ symbols: string[] }>,
+    exchangeInfo(),
     limited(() => raw('/fapi/v1/ticker/24hr')) as Promise<{ symbol: string; lastPrice: string; priceChangePercent: string; quoteVolume: string }[]>,
   ]);
   const ok = new Set(info.symbols);
