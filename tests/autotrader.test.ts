@@ -64,13 +64,13 @@ describe('auto trading', () => {
     expect(open().length).toBe(2);
   });
   it('lewati sideways, sinyal lama, dan yang melawan BTC', async () => {
-    setup([{ symbol: 'AAAUSDT', adx15: 18 }, { symbol: 'BBBUSDT', bw1h: 0.01 }]);
+    // ADX 18 < 20 → sideways; Bollinger menyempit tidak lagi memblokir; ADX 22 sudah cukup
+    setup([{ symbol: 'AAAUSDT', adx15: 18 }, { symbol: 'BBBUSDT', bw1h: 0.01 }, { symbol: 'CCCUSDT', adx15: 22 }]);
     await runAutoOnce();
     await flush();
-    expect(open().length).toBe(0);
+    expect(open().map((p) => p.symbol).sort()).toEqual(['BBBUSDT', 'CCCUSDT']);
     const logs = useApp.getState().autoLog.map((l) => l.text).join('\n');
-    expect(logs).toMatch(/sideways — ADX/);
-    expect(logs).toMatch(/Bollinger 1H menyempit/);
+    expect(logs).toMatch(/sideways — ADX 15m 18.*≥ 20/);
     fresh = false;
     setup([{ symbol: 'AAAUSDT' }]);
     await runAutoOnce();

@@ -67,12 +67,12 @@ function CoinCard({ row }: { row: ScanRow }) {
   return (
     <button onClick={() => open(row.symbol)} className={`card w-full p-3 text-left transition hover:border-accent/60 ${setup.key === 'GOLD' ? 'border-accent/70 ring-1 ring-accent/30' : ''} ${failed.length ? 'opacity-60' : ''}`}>
       <div className="flex items-center gap-2">
-        <div className="text-base font-bold">{setup.key === 'GOLD' && <span title="Golden: 4H + 1H + 15M qualify semua">⭐ </span>}{base(row.symbol)}</div>
+        <div className="text-base font-bold">{setup.key === 'GOLD' && <span title="Golden: 4H + 1H + 15M qualify semua">⭐ </span>}{base(row.symbol)}{row.source === 'volume' && <span className="chip ml-1 bg-panel2 align-middle text-[10px] font-normal text-mute" title="Bukan list market cap besar — masuk karena top 5 volume Binance">🔥 top vol</span>}</div>
         <DirBadge dir={setup.dir} />
         <div className="ml-auto text-right">
           <WinratePill pct={wr?.pct ?? null} compact />
           {wr && (
-            <div className="mt-0.5 text-[10px] text-mute num" title="Jumlah kejadian setup yang sama di histori: koin ini / gabungan 40 koin">
+            <div className="mt-0.5 text-[10px] text-mute num" title="Jumlah kejadian setup yang sama di histori: koin ini / gabungan semua koin">
               koin {wr.coin.n} · gabungan {wr.pool.n}
             </div>
           )}
@@ -227,7 +227,7 @@ export function ScannerPage() {
       )}
       {!scan.result && scan.status !== 'running' && (
         <Empty>
-          Tekan <b>Scan Now</b> untuk scan 40 koin teratas Binance Futures.
+          Tekan <b>Scan Now</b> untuk scan 20 koin market cap besar + 5 koin volume tertinggi Binance Futures.
           <br />
           Winrate tiap sinyal dihitung dari backtest data historis asli (TP/SL sesuai Pengaturan, % dari margin).
         </Empty>

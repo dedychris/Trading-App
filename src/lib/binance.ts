@@ -102,6 +102,23 @@ export async function getKlinesRange(symbol: string, interval: Interval, from: n
 
 export type Ticker24h = { symbol: string; lastPrice: number; priceChangePercent: number; quoteVolume: number };
 
+// 20 koin market cap besar (list tetap) + 5 koin volume tertinggi Binance di luar list ini.
+export const CORE_COINS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'TRXUSDT', 'LINKUSDT', 'AVAXUSDT', 'SUIUSDT', 'TONUSDT', 'DOTUSDT', 'LTCUSDT', 'BCHUSDT', 'XLMUSDT', 'HBARUSDT', 'NEARUSDT', 'UNIUSDT', 'APTUSDT'];
+export const EXTRA_TOP_VOLUME = 5;
+const STABLES = /^(USDC|FDUSD|TUSD|USDP|DAI|BUSD|USDE|EUR|BTCDOM)/;
+
+export type UniverseCoin = Ticker24h & { source: 'core' | 'volume' };
+
+/** Koin yang di-scan: list tetap + top N volume (bukan stablecoin, bukan anggota list tetap). */
+export async function getUniverse(extra = EXTRA_TOP_VOLUME): Promise<UniverseCoin[]> {
+  const all = await getTopSymbols(Infinity);
+  const by = new Map(all.map((t) => [t.symbol, t]));
+  const core = new Set(CORE_COINS);
+  const coreRows = CORE_COINS.filter((s) => by.has(s)).map((s) => ({ ...by.get(s)!, source: 'core' as const }));
+  const volRows = all.filter((t) => !core.has(t.symbol) && !STABLES.test(t.symbol)).slice(0, extra).map((t) => ({ ...t, source: 'volume' as const }));
+  return [...coreRows, ...volRows];
+}
+
 export async function getTopSymbols(n = 40): Promise<Ticker24h[]> {
   const [info, tickers] = await Promise.all([
     limited(() => raw('/fapi/v1/exchangeInfo')) as Promise<{ symbols: string[] }>,

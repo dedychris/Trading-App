@@ -4,7 +4,7 @@ import { useApp } from './app';
 
 let running: Promise<void> | null = null;
 
-/** Scan 40 koin. Dipakai tombol Scan Now dan auto trading (scan bersamaan digabung jadi satu). */
+/** Scan 20 koin market cap besar + 5 top volume. Dipakai tombol Scan Now dan auto trading (scan bersamaan digabung jadi satu). */
 export function doScan(opts: { quiet?: boolean } = {}): Promise<void> {
   if (running) return running;
   running = scanOnce(opts).finally(() => {

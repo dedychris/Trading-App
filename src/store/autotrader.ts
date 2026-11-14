@@ -1,5 +1,5 @@
-// 🤖 Auto trading (simulasi). Jalan selama app terbuka: tiap candle 15m close, scan otomatis,
-// lalu buka posisi untuk sinyal ⭐ Golden / 3TF searah yang BARU muncul dan lolos semua syarat.
+// 🤖 Auto trading (simulasi). Jalan selama app terbuka: langsung scan saat aktif, lalu tiap candle 15m close,
+// buka posisi untuk sinyal ⭐ Golden / 3TF searah (+ 4H+1H kalau aktif) yang BARU muncul dan lolos syarat.
 import { findSignals, winrate } from '../lib/backtest';
 import { getDerivatives } from '../lib/binance';
 import { fmtPct, fmtPrice, fmtUsd, base } from '../lib/format';
@@ -13,6 +13,8 @@ import { doScan } from './scan';
 import type { Snapshot } from './types';
 
 export const AUTO_KEYS: SetupKey[] = ['GOLD', '3TF'];
+export const autoKeys = (a: { with4h1h?: boolean }): SetupKey[] => (a.with4h1h ? [...AUTO_KEYS, '1H4H'] : AUTO_KEYS);
+export const ADX_MIN = 20; // batas anti-sideways (ADX 15m & 1H)
 const SLOT = 15 * 60_000;
 const DELAY = 30_000; // tunggu 30 detik setelah candle close supaya data Binance sudah final
 const DAY = 86_400_000;
@@ -82,9 +84,10 @@ function evaluate() {
   }
   const now = Date.now();
   useApp.setState({ autoDecision: {} }); // kartu cuma menampilkan keputusan run terbaru
-  const cands = res.rows.filter((r) => r.setup && AUTO_KEYS.includes(r.setup.key));
+  const keys = autoKeys(a);
+  const cands = res.rows.filter((r) => r.setup && keys.includes(r.setup.key));
   if (!cands.length) {
-    log(`Scan ${new Date(res.at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}: tidak ada sinyal ⭐ Golden / 3TF searah.`);
+    log(`Scan ${new Date(res.at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}: tidak ada sinyal ${keys.map(setupShort).join(' / ')}.`);
     return;
   }
   const { pnl, startBalance } = todayPnl();
@@ -112,11 +115,11 @@ function evaluate() {
       skip('sudah ada posisi auto di koin ini');
       continue;
     }
-    // sinyal harus BARU muncul di candle 15m yang barusan close
+    // sinyal harus BARU muncul (maks N candle 15m terakhir; setup 4H+1H minimal 1 candle 1H)
     const ss = res.series[r.symbol];
     const sigs = findSignals(ss, setup.key);
     const last = sigs[sigs.length - 1];
-    const maxAge = Math.max(1, a.freshCandles) * SLOT + 2 * DELAY;
+    const maxAge = Math.max(Math.max(1, a.freshCandles) * SLOT, SETUP_INFO[setup.key].grid === '1h' ? 4 * SLOT : 0) + 2 * DELAY;
     if (!last || last.dir !== setup.dir || now - last.t > maxAge) {
       const age = last ? Math.round((now - last.t) / SLOT) : null;
       skip(`sinyal sudah berjalan ${age !== null ? `±${age} candle` : 'lama'} (batas ${a.freshCandles} candle terakhir)`);
@@ -134,12 +137,8 @@ function evaluate() {
       skip('data indikator kurang');
       continue;
     }
-    if (g15.v.adx < 25 || h1.v.adx < 25) {
-      skip(`sideways — ADX 15m ${g15.v.adx.toFixed(0)}, 1H ${h1.v.adx.toFixed(0)} (butuh ≥ 25)`);
-      continue;
-    }
-    if (!(h1.v.bbWidth >= 0.8 * h1.v.bbWidthAvg)) {
-      skip('sideways — Bollinger 1H menyempit (harga muter di range sempit)');
+    if (g15.v.adx < ADX_MIN || h1.v.adx < ADX_MIN) {
+      skip(`sideways — ADX 15m ${g15.v.adx.toFixed(0)}, 1H ${h1.v.adx.toFixed(0)} (butuh ≥ ${ADX_MIN})`);
       continue;
     }
     const grid = r.tf[SETUP_INFO[setup.key].grid]!;
@@ -243,10 +242,10 @@ export function startAutoTrader() {
     const now = Date.now();
     const slot = Math.floor((now - DELAY) / SLOT);
     if (lastSlot === -1) {
-      // baru dinyalakan / app baru dibuka: jangan kejar sinyal lama, tunggu candle berikutnya
+      // baru dinyalakan / app baru dibuka: langsung scan. Aman, cuma sinyal yang masih baru (batas candle) yang di-entry.
       lastSlot = slot;
-      useApp.setState({ autoRun: { ...useApp.getState().autoRun, nextAt: nextSlotAt(now) } });
-      log('Auto trading aktif. Menunggu candle 15m berikutnya close.');
+      log('Auto trading aktif. Scan sekarang, lalu tiap candle 15m close.');
+      runAutoOnce();
       return;
     }
     if (slot > lastSlot) {
@@ -256,11 +255,33 @@ export function startAutoTrader() {
   };
   timer = setInterval(tick, 10_000);
   tick();
+  syncWakeLock();
+  document.addEventListener('visibilitychange', syncWakeLock);
   // reset penanda kalau auto dimatikan, supaya saat dinyalakan lagi tidak langsung entry
   useApp.subscribe((s, prev) => {
     if (prev.book.settings.auto.enabled && !s.book.settings.auto.enabled) {
       lastSlot = -1;
       log('Auto trading dimatikan.');
     }
+    if (prev.book.settings.auto !== s.book.settings.auto) syncWakeLock();
   });
+}
+
+// Cegah layar HP mati selama auto aktif (kalau layar mati, browser membekukan app dan auto berhenti).
+type Sentinel = { released: boolean; release: () => Promise<void> };
+let wake: Sentinel | null = null;
+async function syncWakeLock() {
+  const nav = navigator as Navigator & { wakeLock?: { request: (t: 'screen') => Promise<Sentinel> } };
+  if (!nav.wakeLock) return;
+  const a = useApp.getState().book.settings.auto;
+  const want = autoAllowedHere() && a.wakeLock && document.visibilityState === 'visible';
+  try {
+    if (want && (!wake || wake.released)) wake = await nav.wakeLock.request('screen');
+    else if (!want && wake && !wake.released) {
+      await wake.release();
+      wake = null;
+    }
+  } catch {
+    /* browser menolak (mis. hemat baterai) — abaikan */
+  }
 }
