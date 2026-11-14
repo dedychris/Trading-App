@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { FILTER_INFO, FILTER_KEYS } from '../lib/signals';
+import { FILTER_INFO, FILTER_KEYS, setupShort } from '../lib/signals';
 import { FEE } from '../lib/sim';
 import { requestNotifyPermission } from '../lib/notify';
 import { getIdrRate } from '../lib/binance';
@@ -8,7 +8,7 @@ import { archiveList, startBalanceOf, walletBalance } from '../store/book';
 import { signInGoogle, signOut, syncConfigured, syncNow } from '../store/sync';
 import { fmtIdr, fmtNum, fmtPct, fmtTime, fmtUsd, parseIdr } from '../lib/format';
 import { previewOrder } from '../lib/sim';
-import { autoMargin, deviceId, todayPnl } from '../store/autotrader';
+import { autoKeys, autoMargin, deviceId, todayPnl } from '../store/autotrader';
 import { Idr, Signed } from './ui';
 
 function Toggle({ on, onChange, label, desc }: { on: boolean; onChange: (v: boolean) => void; label: ReactNode; desc?: ReactNode }) {
@@ -183,7 +183,9 @@ function AutoSection() {
             {pv.netWin <= (pv.feeOpen + pv.feeClose) * 2 && <div className="mt-1 text-warn">⚠️ TP terlalu kecil dibanding fee.</div>}
           </div>
           <div className="text-xs text-mute">
-            Syarat entry: sinyal muncul ≤ {a.freshCandles} candle terakhir · winrate ≥ impas{a.ignoreSmallSample ? ` (diabaikan kalau sampel < ${a.minSample})` : ''} · tidak melawan BTC · tidak sideways (ADX 15m & 1H ≥ 25, Bollinger 1H tidak menyempit) · tidak ada peringatan pola SL · lolos filter aktif.
+            Syarat entry: sinyal {autoKeys(a).map(setupShort).join(' / ')} muncul ≤ {a.freshCandles} candle terakhir · tidak melawan BTC · koin belum kena SL {a.maxSlPerCoinDay > 0 ? `${a.maxSlPerCoinDay}× hari ini` : '(batas mati)'} · lolos filter aktif
+            {a.requireWinrate ? <> · winrate ≥ impas{a.ignoreSmallSample ? ` (diabaikan kalau sampel < ${a.minSample})` : ''}</> : ' · winrate cuma info (syarat mati)'}
+            {' '}· nilai posisi ≥ minimal Binance · saldo cukup · maks {a.maxOpen} posisi auto, 1 per koin · berhenti kalau rugi hari ini ≥ {a.dailyLossPct}%. Peringatan pola ⚠️ tidak memblokir.
           </div>
           <div className="text-xs">
             PnL hari ini: <Signed v={today.pnl}>{fmtUsd(today.pnl, true)} USDT</Signed>

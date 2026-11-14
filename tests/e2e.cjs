@@ -119,8 +119,8 @@ async function route(page) {
   await ap.clock.install({ time: new Date() });
   await ap.goto('http://localhost:4173/#set');
   await ap.getByText('Auto trading', { exact: false }).first().waitFor();
-  await ap.locator('label', { hasText: 'Tiap candle 15m close' }).click();
-  await ap.getByText('Auto trading aktif. Menunggu').waitFor();
+  // auto aktif dari awal: langsung scan saat app dibuka
+  await ap.getByText('Auto trading aktif. Scan sekarang').waitFor();
   await ap.clock.fastForward('16:00');
   let logText = '';
   for (let i = 0; i < 60; i++) {
