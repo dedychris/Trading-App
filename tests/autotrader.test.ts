@@ -117,7 +117,7 @@ describe('auto trading', () => {
     const old = defaultSettings();
     old.auto = { ...old.auto, dailyLossPct: 5, requireWinrate: true, rulesV: undefined };
     const m = migrateSettings(old);
-    expect(m.auto).toMatchObject({ dailyLossPct: 15, requireWinrate: false, maxSlPerCoinDay: 3, rulesV: 3, marginMode: 'split' });
+    expect(m.auto).toMatchObject({ dailyLossPct: 15, requireWinrate: false, maxSlPerCoinDay: 3, rulesV: 4, marginMode: 'percent', marginPercent: 10 });
     expect(migrateSettings({ ...m, auto: { ...m.auto, dailyLossPct: 8 } }).auto.dailyLossPct).toBe(8);
   });
   it('syarat winrate nyala: winrate rendah tapi sampel < 10 → diabaikan & tetap entry; sampel besar → dilewati', async () => {
@@ -150,6 +150,56 @@ describe('auto trading', () => {
     // saldo naik 10% → jatah per posisi ikut naik
     const bigger = { ...b, positions: {}, ledger: { ...b.ledger, x: { id: 'x', t: 1, amt: 0.9, kind: 'pnl' as const, posId: 'x' } } };
     expect(autoMargin(b.settings.auto, bigger)).toBeGreaterThan(4.9);
+  });
+  it('default margin auto = 10% saldo', async () => {
+    setup([{ symbol: 'AAAUSDT' }], 'BULLISH', {}, (b) => { b.startBalance = 9; });
+    await runAutoOnce();
+    await flush();
+    expect(open()[0].margin).toBeCloseTo(0.9, 9);
+  });
+  it('harga sudah lari > 50% jarak SL dari harga sinyal → dilewati; masih dekat → entry + harga sinyal tersimpan', async () => {
+    // SL 6% margin di 10× = 0,6% harga → batas ±0,3%
+    setup([{ symbol: 'AAAUSDT' }]);
+    useApp.setState({ prices: { AAAUSDT: 100.4 } });
+    await runAutoOnce();
+    await flush();
+    expect(open().length).toBe(0);
+    expect(useApp.getState().autoLog[0].text).toMatch(/harga sudah lari \+0\.40% dari harga sinyal/);
+    setup([{ symbol: 'AAAUSDT' }]);
+    useApp.setState({ prices: { AAAUSDT: 99.8 } });
+    await runAutoOnce();
+    await flush();
+    expect(open().length).toBe(1);
+    expect(open()[0].snapEntry).toMatchObject({ signalPrice: 100 });
+    setup([{ symbol: 'AAAUSDT' }], 'BULLISH', { maxDriftPct: 0 });
+    useApp.setState({ prices: { AAAUSDT: 103 } });
+    await runAutoOnce();
+    await flush();
+    expect(open().length).toBe(1); // 0 = cek mati
+  });
+  it('stop rugi harian ikut menghitung risiko posisi terbuka', async () => {
+    const { openRisk } = await import('../src/store/autotrader');
+    // saldo awal hari ini 10.000, sudah rugi 1.300 (13%), batas 15% → sisa ruang 200
+    const prep = (openMargin: number) => (b: ReturnType<typeof emptyBook>) => {
+      b.ledger.loss = { id: 'loss', t: Date.now() - 60_000, amt: -1300, kind: 'pnl', posId: 'z' };
+      if (openMargin) b.positions.o = { id: 'o', symbol: 'ZZZUSDT', dir: 'LONG', leverage: 10, margin: openMargin, qty: (openMargin * 10) / 100, entry: 100, tp: 101.2, sl: 99.4, liq: 90.5, entryType: 'market', openedAt: 0, status: 'open', checkedUntil: 0, fundingUntil: 0, snapEntry: null, updatedAt: 0, auto: false };
+    };
+    // posisi terbuka margin 3000 → kalau SL ≈ −198 → total −1498 → sinyal baru (margin 10% saldo) bisa lewat batas
+    setup([{ symbol: 'AAAUSDT' }], 'BULLISH', { dailyLossPct: 15 }, prep(3000));
+    expect(openRisk(useApp.getState().book)).toBeCloseTo(-180 - 99.4 * 300 * 0.0005, 6);
+    await runAutoOnce();
+    await flush();
+    expect(open().filter((p) => p.auto).length).toBe(0);
+    expect(useApp.getState().autoLog[0].text).toMatch(/bisa lewat batas −15%/);
+    // posisi terbuka sendiri sudah memakan sisa ruang → tahan seluruh run
+    setup([{ symbol: 'AAAUSDT' }], 'BULLISH', { dailyLossPct: 15 }, prep(3500));
+    await runAutoOnce();
+    expect(useApp.getState().autoLog[0].text).toMatch(/^Tahan dulu/);
+    // tanpa posisi terbuka & margin kecil → masih entry
+    setup([{ symbol: 'AAAUSDT' }], 'BULLISH', { dailyLossPct: 15, marginMode: 'fixed', marginFixed: 100 }, prep(0));
+    await runAutoOnce();
+    await flush();
+    expect(open().filter((p) => p.auto).length).toBe(1);
   });
   it('nilai posisi di bawah minimal Binance → dilewati dengan alasan', async () => {
     minN = 100;

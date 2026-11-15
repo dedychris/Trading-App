@@ -12,6 +12,8 @@ export type Snapshot = {
   winrate: number | null;
   winrateN: number | null;
   breakevenWinrate?: number;
+  signalT?: number; // waktu close candle sinyal (auto)
+  signalPrice?: number; // harga close candle sinyal = harga entry versi backtest (auto)
 };
 
 export type CloseReason = 'TP' | 'TRAIL' | 'SL' | 'LIQ' | 'MANUAL';
@@ -39,6 +41,7 @@ export type Position = {
   exit?: number;
   closedAt?: number;
   reason?: CloseReason;
+  closeFee?: number; // fee tutup (USDT, positif) — dipakai untuk menyamakan ledger saat sinkron
   checkedUntil: number; // sudah dicek TP/SL sampai waktu ini (candle 1m)
   fundingUntil: number; // funding sudah dihitung sampai waktu ini
   snapEntry: Snapshot | null;
@@ -87,6 +90,7 @@ export type AutoSettings = {
   wakeLock: boolean; // cegah layar mati selama auto aktif & app terbuka
   requireWinrate: boolean; // syarat winrate backtest ≥ winrate impas
   maxSlPerCoinDay: number; // koin yang sudah kena SL sebanyak ini hari ini (WIB) tidak di-entry lagi; 0 = mati
+  maxDriftPct: number; // lewati kalau harga sudah lari > X% dari jarak SL, dihitung dari harga sinyal; 0 = mati
   rulesV?: number; // versi aturan auto (untuk migrasi setting lama)
 };
 
