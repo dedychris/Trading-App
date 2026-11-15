@@ -5,7 +5,7 @@ import { getDerivatives, minNotional } from '../lib/binance';
 import { fmtPct, fmtPrice, fmtUsd, base } from '../lib/format';
 import { beep, systemNotify } from '../lib/notify';
 import { atrPass, btcConflict, filterPass, sentimentPass, SETUP_INFO, setupShort, type SetupKey } from '../lib/signals';
-import { feeRate, moves, previewOrder } from '../lib/sim';
+import { feeRate, moves, pnl as pnlAt, previewOrder } from '../lib/sim';
 import { availableBalance, openPosition, useApp, type AutoLog } from './app';
 import { walletBalance } from './book';
 import { doScan } from './scan';
@@ -76,6 +76,26 @@ export function todayPnl() {
   return { pnl, startBalance: walletBalance(b) - pnl };
 }
 
+/**
+ * Rugi (USDT, negatif) kalau semua posisi terbuka kena SL sekarang, termasuk fee tutup.
+ * Posisi yang trailing-nya sudah aktif dihitung 0 (profit TP sudah dikunci).
+ */
+export function openRisk(b: Book) {
+  let r = 0;
+  for (const p of Object.values(b.positions)) {
+    if (p.status !== 'open' || p.trailActive) continue;
+    r += pnlAt(p.dir, p.entry, p.sl, p.qty) - p.sl * p.qty * feeRate('taker', b.settings.bnb);
+  }
+  return r;
+}
+
+/** Selisih harga sekarang dari harga sinyal (%, + = naik) dan batasnya (% harga) dari setting. */
+export function driftCheck(a: AutoSettings, signalPrice: number, price: number) {
+  const drift = ((price - signalPrice) / signalPrice) * 100;
+  const limit = (moves(a.leverage, a.tpPct, a.slPct).sl * 100 * a.maxDriftPct) / 100;
+  return { drift, limit, ok: !(a.maxDriftPct > 0) || Math.abs(drift) <= limit };
+}
+
 export const nextSlotAt = (now = Date.now()) => Math.floor((now - DELAY) / SLOT) * SLOT + SLOT + DELAY;
 
 export async function runAutoOnce() {
@@ -109,8 +129,15 @@ function evaluate() {
     return;
   }
   const { pnl, startBalance } = todayPnl();
-  if (startBalance > 0 && pnl <= (-a.dailyLossPct / 100) * startBalance) {
+  const lossLimit = (a.dailyLossPct / 100) * startBalance;
+  if (startBalance > 0 && pnl <= -lossLimit) {
     log(`Stop: rugi hari ini ${fmtUsd(pnl, true)} USDT sudah melewati batas −${a.dailyLossPct}%. Auto lanjut besok 00:00 WIB.`, 'bad');
+    return;
+  }
+  // stop rugi harian ikut menghitung posisi yang masih terbuka (kalau semuanya kena SL), supaya tidak kebablasan
+  const risk0 = openRisk(book);
+  if (startBalance > 0 && pnl + risk0 <= -lossLimit) {
+    log(`Tahan dulu: rugi hari ini ${fmtUsd(pnl, true)} + risiko posisi terbuka ${fmtUsd(risk0, true)} USDT sudah sampai batas −${a.dailyLossPct}%. Entry lagi setelah posisi terbuka selesai.`, 'bad');
     return;
   }
   const filters = { volume: book.settings.filters.volume, ema200: book.settings.filters.ema200, bollinger: book.settings.filters.bollinger, atr: book.settings.filters.atr };
@@ -120,6 +147,7 @@ function evaluate() {
 
   let planned = 0; // posisi yang sedang dibuka di run ini (pembukaan async)
   let reserved = 0; // margin + fee buka posisi yang sedang dibuka di run ini
+  let riskPlanned = 0; // rugi kalau posisi yang dibuka di run ini kena SL (negatif)
   for (const { r, wr } of ranked) {
     const setup = r.setup!;
     const tag = `${base(r.symbol)} ${setup.dir} (${setupShort(setup.key)})`;
@@ -166,6 +194,12 @@ function evaluate() {
       continue;
     }
     const price = useApp.getState().prices[r.symbol] ?? r.price;
+    // entry telat (mis. app baru dibuka): harga sudah lari jauh dari harga sinyal → winrate backtest tidak berlaku lagi
+    const dc = driftCheck(a, last.entry, price);
+    if (!dc.ok) {
+      skip(`harga sudah lari ${dc.drift > 0 ? '+' : ''}${dc.drift.toFixed(2)}% dari harga sinyal ${fmtPrice(last.entry)} (batas ±${dc.limit.toFixed(2)}% = ${a.maxDriftPct}% jarak SL)`);
+      continue;
+    }
     const margin = autoMargin(a, b, reserved);
     const pv = previewOrder({ dir: setup.dir, entry: price, leverage: a.leverage, margin, entryType: 'market', bnb: b.settings.bnb, tpPct: a.tpPct, slPct: a.slPct });
     // sampel yang dipakai winrate: koin ini kalau ≥ 20 kejadian, selain itu gabungan 40 koin
@@ -179,6 +213,10 @@ function evaluate() {
       skip(`saldo tersedia tidak cukup untuk margin ${fmtUsd(margin)} USDT`);
       continue;
     }
+    if (startBalance > 0 && pnl + risk0 + riskPlanned + pv.netLoss < -lossLimit) {
+      skip(`kalau kena SL, rugi hari ini bisa lewat batas −${a.dailyLossPct}% (sudah ${fmtUsd(pnl, true)}, risiko posisi terbuka ${fmtUsd(risk0 + riskPlanned, true)} USDT)`);
+      continue;
+    }
     const minN = minNotional(r.symbol, price);
     if (margin * a.leverage < minN) {
       skip(`nilai posisi ${fmtUsd(margin * a.leverage)} USDT di bawah minimal Binance ${fmtUsd(minN)} USDT (butuh margin ≥ ${fmtUsd(minN / a.leverage)} USDT di ${a.leverage}×)`);
@@ -186,7 +224,8 @@ function evaluate() {
     }
     planned++;
     reserved += margin * (1 + a.leverage * feeRate('taker', b.settings.bnb)); // margin + fee buka
-    void openAuto_({ id, symbol: r.symbol, setup, price, margin, wrPct: wr.pct, wrN: sample, smallSample: smallSample || !a.requireWinrate, breakeven: pv.breakevenWinrate, tf: r.tf, needSentiment: book.settings.filters.sentiment, tag });
+    riskPlanned += pv.netLoss;
+    void openAuto_({ id, symbol: r.symbol, setup, price, margin, signalT: last.t, signalPrice: last.entry, wrPct: wr.pct, wrN: sample, smallSample: smallSample || !a.requireWinrate, breakeven: pv.breakevenWinrate, tf: r.tf, needSentiment: book.settings.filters.sentiment, tag });
   }
 }
 
@@ -196,6 +235,8 @@ async function openAuto_(x: {
   setup: { key: SetupKey; dir: 'LONG' | 'SHORT' };
   price: number;
   margin: number;
+  signalT: number;
+  signalPrice: number;
   wrPct: number | null;
   wrN: number;
   smallSample: boolean;
@@ -234,6 +275,8 @@ async function openAuto_(x: {
     winrate: x.wrPct,
     winrateN: x.wrN,
     breakevenWinrate: x.breakeven,
+    signalT: x.signalT,
+    signalPrice: x.signalPrice,
   };
   openPosition({ id: x.id, symbol: x.symbol, dir: x.setup.dir, leverage: a.leverage, margin: x.margin, entry: price, entryType: 'market', snap, tpPct: a.tpPct, slPct: a.slPct, trailPct: a.trailOn ? a.trailPct : null, auto: true });
   const wrText = !a.requireWinrate ? `winrate ${fmtPct(x.wrPct, 0)} (info saja)` : x.smallSample ? `winrate diabaikan (sampel ${x.wrN} < ${a.minSample})` : `winrate ${fmtPct(x.wrPct, 0)}`;

@@ -8,11 +8,36 @@ import { archiveAsBook, archiveList, positionLedger, startBalanceOf, walletBalan
 import type { Book, Position } from '../store/types';
 import { DirBadge, Empty, Idr, Signed } from './ui';
 
+// Kolom tambahan untuk analisa: indikator saat entry + seberapa telat entry dari sinyal
+const CSV_EXTRA = ['rsi_15m', 'adx_15m', 'atr_15m_pct', 'vol_ratio_15m', 'rsi_1h', 'adx_1h', 'rsi_4h', 'adx_4h', 'sl_vs_atr_15m', 'harga_sinyal', 'jam_sinyal', 'telat_menit', 'selisih_entry_sinyal_pct'];
+const num = (v: number | undefined | null, d = 2) => (v === undefined || v === null || !Number.isFinite(v) ? '' : v.toFixed(d));
+export function csvExtra(p: Position): string[] {
+  const s = p.snapEntry;
+  const tf = s?.tf ?? {};
+  const m15 = tf['15m']?.v;
+  const slMovePct = (p.slPct ?? 7) / p.leverage;
+  return [
+    num(m15?.rsi, 1),
+    num(m15?.adx, 1),
+    num(m15?.atrPct, 3),
+    num(m15?.volRatio, 2),
+    num(tf['1h']?.v.rsi, 1),
+    num(tf['1h']?.v.adx, 1),
+    num(tf['4h']?.v.rsi, 1),
+    num(tf['4h']?.v.adx, 1),
+    m15?.atrPct ? num(slMovePct / m15.atrPct, 2) : '',
+    s?.signalPrice !== undefined ? String(s.signalPrice) : '',
+    s?.signalT !== undefined ? new Date(s.signalT).toISOString() : '',
+    s?.signalT !== undefined ? num((p.openedAt - s.signalT) / 60_000, 1) : '',
+    s?.signalPrice ? num(((p.entry - s.signalPrice) / s.signalPrice) * 100, 3) : '',
+  ];
+}
+
 export function exportCsv(book: Book, label = '') {
   const rows = Object.values(book.positions)
     .filter((p) => p.status === 'closed')
     .sort((a, b) => (a.closedAt ?? 0) - (b.closedAt ?? 0));
-  const head = ['dibuka', 'ditutup', 'koin', 'arah', 'leverage', 'tipe', 'margin', 'entry', 'exit', 'tp', 'sl', 'alasan', 'auto', 'tp_pct', 'sl_pct', 'trailing_pct', 'profit_tertinggi_pct', 'pnl_kotor', 'fee', 'funding', 'pnl_bersih', 'roe_%', 'setup', 'btc', 'winrate_entry'];
+  const head = ['dibuka', 'ditutup', 'koin', 'arah', 'leverage', 'tipe', 'margin', 'entry', 'exit', 'tp', 'sl', 'alasan', 'auto', 'tp_pct', 'sl_pct', 'trailing_pct', 'profit_tertinggi_pct', 'pnl_kotor', 'fee', 'funding', 'pnl_bersih', 'roe_%', 'setup', 'btc', 'winrate_entry', ...CSV_EXTRA];
   const lines = rows.map((p) => {
     const l = positionLedger(book, p.id);
     return [
@@ -41,6 +66,7 @@ export function exportCsv(book: Book, label = '') {
       p.snapEntry?.setup?.key ?? '',
       p.snapEntry?.btcTrend ?? '',
       p.snapEntry?.winrate?.toFixed(1) ?? '',
+      ...csvExtra(p),
     ].join(',');
   });
   const blob = new Blob([[head.join(','), ...lines].join('\n')], { type: 'text/csv' });

@@ -115,7 +115,7 @@ function AutoSection() {
             </div>
             <div className="-mt-1 text-xs text-mute">
               {a.marginMode === 'split'
-                ? `Compounding, modal terpakai penuh: saldo dibagi rata ke maks ${a.maxOpen} posisi auto. Cuan langsung ikut jadi modal trade berikutnya, rugi → margin ikut mengecil.`
+                ? <span className="text-warn">⚠️ Berisiko: seluruh saldo dibagi ke maks {a.maxOpen} posisi auto, jadi posisi searah = satu taruhan besar. 1× SL ≈ −{fmtNum(-pv.netLossPct / Math.max(1, a.maxOpen), 1)}% saldo. Disarankan % saldo (10%).</span>
                 : a.marginMode === 'percent'
                   ? 'Compounding: margin ikut saldo sekarang, cuan langsung ikut jadi modal.'
                   : 'Nominal tetap, tidak compounding.'}
@@ -138,6 +138,12 @@ function AutoSection() {
               <span className="text-xs text-mute">muncul maks</span>
               <NumInput value={a.freshCandles} onChange={(v) => set({ freshCandles: Math.max(1, Math.round(v)) })} max={8} />
               <span className="text-xs text-mute">candle 15m terakhir (2 = ≤ 30 menit)</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-28">Harga lari</span>
+              <span className="text-xs text-mute">lewati kalau harga sudah gerak &gt;</span>
+              <NumInput value={a.maxDriftPct} onChange={(v) => set({ maxDriftPct: Math.max(0, Math.round(v)) })} max={500} />
+              <span className="text-xs text-mute">% jarak SL dari harga sinyal (±{fmtNum((pv.slMovePct * a.maxDriftPct) / 100, 2)}% harga · 0 = mati)</span>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="w-28">Syarat winrate</span>
@@ -168,7 +174,7 @@ function AutoSection() {
               <span className="w-28">Stop rugi harian</span>
               <span className="text-xs">−</span>
               <NumInput value={a.dailyLossPct} onChange={(v) => set({ dailyLossPct: v })} max={100} />
-              <span className="text-xs text-mute">% saldo · reset 00:00 WIB</span>
+              <span className="text-xs text-mute">% saldo · ikut menghitung posisi terbuka kalau kena SL · reset 00:00 WIB</span>
             </div>
           </div>
         </div>
@@ -183,9 +189,9 @@ function AutoSection() {
             {pv.netWin <= (pv.feeOpen + pv.feeClose) * 2 && <div className="mt-1 text-warn">⚠️ TP terlalu kecil dibanding fee.</div>}
           </div>
           <div className="text-xs text-mute">
-            Syarat entry: sinyal {autoKeys(a).map(setupShort).join(' / ')} muncul ≤ {a.freshCandles} candle terakhir · tidak melawan BTC · koin belum kena SL {a.maxSlPerCoinDay > 0 ? `${a.maxSlPerCoinDay}× hari ini` : '(batas mati)'} · lolos filter aktif
+            Syarat entry: sinyal {autoKeys(a).map(setupShort).join(' / ')} muncul ≤ {a.freshCandles} candle terakhir{a.maxDriftPct > 0 ? ` · harga belum lari > ${a.maxDriftPct}% jarak SL dari harga sinyal` : ''} · tidak melawan BTC · koin belum kena SL {a.maxSlPerCoinDay > 0 ? `${a.maxSlPerCoinDay}× hari ini` : '(batas mati)'} · lolos filter aktif
             {a.requireWinrate ? <> · winrate ≥ impas{a.ignoreSmallSample ? ` (diabaikan kalau sampel < ${a.minSample})` : ''}</> : ' · winrate cuma info (syarat mati)'}
-            {' '}· nilai posisi ≥ minimal Binance · saldo cukup · maks {a.maxOpen} posisi auto, 1 per koin · berhenti kalau rugi hari ini ≥ {a.dailyLossPct}%. Peringatan pola ⚠️ tidak memblokir.
+            {' '}· nilai posisi ≥ minimal Binance · saldo cukup · maks {a.maxOpen} posisi auto, 1 per koin · berhenti kalau rugi hari ini + risiko posisi terbuka ≥ {a.dailyLossPct}%. Peringatan pola ⚠️ tidak memblokir.
           </div>
           <div className="text-xs">
             PnL hari ini: <Signed v={today.pnl}>{fmtUsd(today.pnl, true)} USDT</Signed>

@@ -1,9 +1,9 @@
 // Buku trading: saldo dihitung dari ledger (append-only, id deterministik) supaya
 // sinkron HP <-> laptop aman walaupun dua device menutup posisi yang sama.
-import { START_BALANCE } from '../lib/sim';
+import { pnl, START_BALANCE } from '../lib/sim';
 import type { ArchivedSession, Book, LedgerEntry, Position, Settings } from './types';
 
-export const AUTO_RULES_V = 3;
+export const AUTO_RULES_V = 4;
 
 export const defaultSettings = (): Settings => ({
   theme: typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark',
@@ -12,7 +12,7 @@ export const defaultSettings = (): Settings => ({
   slPct: 7,
   trailOn: true,
   trailPct: 4,
-  auto: { enabled: true, deviceId: null, leverage: 10, marginMode: 'split', marginFixed: 1, marginPercent: 10, tpPct: 14, slPct: 7, trailOn: true, trailPct: 4, maxOpen: 3, dailyLossPct: 15, freshCandles: 2, ignoreSmallSample: true, minSample: 10, with4h1h: true, wakeLock: true, requireWinrate: false, maxSlPerCoinDay: 3, rulesV: AUTO_RULES_V },
+  auto: { enabled: true, deviceId: null, leverage: 10, marginMode: 'percent', marginFixed: 1, marginPercent: 10, tpPct: 14, slPct: 7, trailOn: true, trailPct: 4, maxOpen: 3, dailyLossPct: 15, freshCandles: 2, ignoreSmallSample: true, minSample: 10, with4h1h: true, wakeLock: true, requireWinrate: false, maxSlPerCoinDay: 3, maxDriftPct: 50, rulesV: AUTO_RULES_V },
   marginMode: 'percent',
   marginFixed: 1,
   marginPercent: 10,
@@ -28,6 +28,8 @@ export const defaultSettings = (): Settings => ({
  * v2: stop rugi −15%, syarat winrate mati, maks 3 SL per koin/hari.
  * v3: modal kecil (mis. Rp 150 ribu) + compounding: margin manual = 10% saldo,
  *     margin auto = saldo dibagi rata ke maks posisi (cuan langsung ikut jadi modal).
+ * v4: "bagi rata" terlalu berisiko (1 SL ≈ −2,7% saldo, 3 posisi searah = seluruh saldo satu taruhan)
+ *     → margin auto 10% saldo (tetap compounding).
  */
 export function migrateSettings(s: Settings): Settings {
   const d = defaultSettings().auto;
@@ -40,6 +42,7 @@ export function migrateSettings(s: Settings): Settings {
     a = { ...a, marginMode: 'split', marginPercent: 10 };
     out = { ...out, marginMode: 'percent', marginPercent: 10 };
   }
+  if (v < 4 && a.marginMode === 'split') a = { ...a, marginMode: 'percent', marginPercent: 10 };
   return { ...out, auto: { ...a, rulesV: AUTO_RULES_V }, updatedAt: Date.now() };
 }
 
@@ -134,8 +137,24 @@ function newer<T extends { updatedAt: number }>(a: T, b: T) {
   return b.updatedAt > a.updatedAt ? b : a;
 }
 
+/**
+ * Dua device menutup posisi yang sama → pakai yang ketutup DULUAN (di pasar posisi sudah tutup,
+ * gerakan sesudahnya tidak berlaku). Seri → yang terakhir diubah, lalu exit terkecil (deterministik).
+ */
+function firstClosed(a: Position, b: Position): Position {
+  const ca = a.closedAt ?? Infinity;
+  const cb = b.closedAt ?? Infinity;
+  if (ca !== cb) return ca < cb ? a : b;
+  if (a.updatedAt !== b.updatedAt) return newer(a, b);
+  return (b.exit ?? 0) < (a.exit ?? 0) ? b : a;
+}
+
 function mergePos(a: Position, b: Position): Position {
   if (a.status !== b.status) return a.status === 'closed' ? a : b;
+  if (a.status === 'closed') {
+    const w = firstClosed(a, b);
+    return { ...w, checkedUntil: Math.max(a.checkedUntil, b.checkedUntil), fundingUntil: Math.max(a.fundingUntil, b.fundingUntil) };
+  }
   const w = newer(a, b);
   const merged: Position = { ...w, checkedUntil: Math.max(a.checkedUntil, b.checkedUntil), fundingUntil: Math.max(a.fundingUntil, b.fundingUntil) };
   // trailing: aktif di salah satu device = aktif; ambil profit tertinggi
@@ -150,6 +169,47 @@ function mergePositions(a: Record<string, Position>, b: Record<string, Position>
   const positions = { ...a };
   for (const [id, p] of Object.entries(b)) positions[id] = positions[id] ? mergePos(positions[id], p) : p;
   return positions;
+}
+
+/**
+ * Samakan ledger dengan posisi yang dipakai: PnL & fee tutup harus berasal dari exit yang sama.
+ * (Bug lama: posisi diambil dari device A tapi PnL dari device B → exit +86% tapi saldo cuma +14%.)
+ * Idempoten: posisi yang sudah cocok tidak diubah.
+ */
+export function reconcileLedger(positions: Record<string, Position>, ledger: Record<string, LedgerEntry>): Record<string, LedgerEntry> {
+  let out = ledger;
+  for (const p of Object.values(positions)) {
+    if (p.status !== 'closed' || p.exit === undefined) continue;
+    const k = `${p.id}:pnl`;
+    const cur = ledger[k];
+    if (!cur) continue;
+    const want = p.reason === 'LIQ' ? -p.margin : pnl(p.dir, p.entry, p.exit, p.qty);
+    if (Math.abs(cur.amt - want) <= 1e-9 * Math.max(1, Math.abs(want))) continue;
+    if (out === ledger) out = { ...ledger };
+    const t = p.closedAt ?? cur.t;
+    out[k] = { ...cur, amt: want, t };
+    const fk = `${p.id}:fee-close`;
+    const f = ledger[fk];
+    if (p.reason === 'LIQ') delete out[fk];
+    else if (p.closeFee !== undefined) out[fk] = { id: fk, t, amt: -p.closeFee, kind: 'fee', posId: p.id };
+    else if (f) {
+      // data lama tanpa closeFee: fee tutup sebanding harga exit (exit lama dihitung balik dari PnL lama)
+      const oldExit = p.entry + ((p.dir === 'LONG' ? 1 : -1) * cur.amt) / p.qty;
+      if (oldExit > 0) out[fk] = { ...f, t, amt: (f.amt * p.exit) / oldExit };
+    }
+  }
+  return out;
+}
+
+/** Samakan ledger sesi sekarang + semua arsip (dipakai saat load & sinkron). */
+export function reconcileBook(b: Book): Book {
+  const ledger = reconcileLedger(b.positions, b.ledger);
+  let archives = b.archives;
+  for (const [k, a] of Object.entries(b.archives ?? {})) {
+    const l = reconcileLedger(a.positions, a.ledger);
+    if (l !== a.ledger) archives = { ...archives, [k]: { ...a, ledger: l } };
+  }
+  return ledger === b.ledger && archives === b.archives ? b : { ...b, ledger, ...(archives ? { archives } : {}) };
 }
 
 function mergeArchive(a: ArchivedSession | undefined, b: ArchivedSession): ArchivedSession {
@@ -178,7 +238,7 @@ export function mergeBooks(a: Book, b: Book): Book {
     // device yang belum tahu ada sesi baru: trade selesainya ikut masuk arsip sesi lamanya
     const k = String(lose.epoch);
     if (archives[k]) archives[k] = mergeArchive(archives[k], sessionArchive(lose, archives[k].endedAt));
-    return { ...withArch(win), settings: migrateSettings(newer(a.settings, b.settings)) };
+    return reconcileBook({ ...withArch(win), settings: migrateSettings(newer(a.settings, b.settings)) });
   }
   const positions = mergePositions(a.positions, b.positions);
   const orders = { ...a.orders };
@@ -191,7 +251,7 @@ export function mergeBooks(a: Book, b: Book): Book {
   const startBalance = a.startBalance ?? b.startBalance;
   const startIdr = a.startIdr ?? b.startIdr;
   const idrRate = a.idrRate ?? b.idrRate;
-  return withArch({
+  return reconcileBook(withArch({
     epoch: a.epoch,
     epochStartedAt: Math.min(a.epochStartedAt, b.epochStartedAt),
     ...(startBalance !== undefined ? { startBalance } : {}),
@@ -201,7 +261,7 @@ export function mergeBooks(a: Book, b: Book): Book {
     orders,
     ledger: { ...a.ledger, ...b.ledger },
     settings: migrateSettings(newer(a.settings, b.settings)),
-  });
+  }));
 }
 
 export function uid() {

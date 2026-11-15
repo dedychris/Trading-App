@@ -4,7 +4,7 @@ import type { ScanResult } from '../lib/scanner';
 import { fmtUsd } from '../lib/format';
 import { feeRate, liqPrice, pnl, SL_PCT, TP_PCT, tpSlPrices } from '../lib/sim';
 import type { Dir } from '../lib/signals';
-import { emptyBook, lockedMargin, migrateSettings, sessionArchive, uid, walletBalance, type SessionStart } from './book';
+import { emptyBook, lockedMargin, migrateSettings, reconcileBook, sessionArchive, uid, walletBalance, type SessionStart } from './book';
 import type { Book, CloseReason, PendingOrder, Position, Settings, Snapshot } from './types';
 
 const KEY = 'msp-book-v1';
@@ -16,7 +16,7 @@ function loadBook(): Book {
       const b = JSON.parse(raw) as Book;
       const d = emptyBook();
       const s0 = { ...d.settings, ...b.settings };
-      return { ...d, ...b, settings: migrateSettings({ ...s0, filters: { ...d.settings.filters, ...b.settings?.filters }, auto: { ...d.settings.auto, rulesV: undefined, ...b.settings?.auto } }) };
+      return reconcileBook({ ...d, ...b, settings: migrateSettings({ ...s0, filters: { ...d.settings.filters, ...b.settings?.filters }, auto: { ...d.settings.auto, rulesV: undefined, ...b.settings?.auto } }) });
     }
   } catch {
     /* data rusak / storage diblokir */
@@ -180,7 +180,7 @@ export function closePosition(id: string, exit: number, reason: CloseReason, t =
   const bnb = useApp.getState().book.settings.bnb;
   const gross = reason === 'LIQ' ? -p.margin : pnl(p.dir, p.entry, exit, p.qty);
   const fee = reason === 'LIQ' ? 0 : exit * p.qty * feeRate('taker', bnb);
-  const closed: Position = { ...p, status: 'closed', exit, reason, closedAt: t, checkedUntil: Math.max(p.checkedUntil, t), updatedAt: Date.now() };
+  const closed: Position = { ...p, status: 'closed', exit, reason, closedAt: t, closeFee: fee, checkedUntil: Math.max(p.checkedUntil, t), updatedAt: Date.now() };
   mutate((b) => ({
     ...b,
     positions: { ...b.positions, [id]: closed },

@@ -121,15 +121,63 @@ describe('format Rupiah & USDT kecil', () => {
   });
 });
 
-describe('migrasi setting v3', () => {
+describe('migrasi setting v3/v4', () => {
   it('margin manual & auto jadi 10% saldo', () => {
     const s = emptyBook().settings;
     const old = { ...s, marginMode: 'fixed' as const, marginFixed: 100, auto: { ...s.auto, marginMode: 'fixed' as const, marginFixed: 100, rulesV: 2 } };
     const m = migrateSettings(old);
     expect(m.marginMode).toBe('percent');
     expect(m.marginPercent).toBe(10);
-    expect(m.auto.marginMode).toBe('split'); // compounding, modal dibagi rata ke maks posisi
+    expect(m.auto.marginMode).toBe('percent'); // compounding, 10% saldo per posisi
+    expect(m.auto.marginPercent).toBe(10)
     expect(m.auto.rulesV).toBe(AUTO_RULES_V);
     expect(migrateSettings(m)).toEqual(m); // tidak migrasi ulang
+  });
+  it('v3 "bagi rata" → 10% saldo; pilihan user setelah v4 dihormati', () => {
+    const s = emptyBook().settings;
+    const m = migrateSettings({ ...s, auto: { ...s.auto, marginMode: 'split', rulesV: 3 } });
+    expect(m.auto).toMatchObject({ marginMode: 'percent', marginPercent: 10, maxDriftPct: 50, rulesV: AUTO_RULES_V });
+    expect(migrateSettings({ ...m, auto: { ...m.auto, marginMode: 'split' } }).auto.marginMode).toBe('split');
+  });
+});
+
+describe('sinkron: dua device menutup posisi yang sama', () => {
+  // posisi SHORT BCH yang sama: device A tutup di trailing +86%, device B tutup di +14% (lebih dulu)
+  function twoDevices() {
+    const p = openPosition({ symbol: 'SOLUSDT', dir: 'SHORT', leverage: 10, margin: 100, entry: 217.26, entryType: 'market', snap: null, trailPct: 4 });
+    const base = structuredClone(useApp.getState().book);
+    closePosition(p.id, 198.57904, 'TRAIL', 2_000);
+    const a = structuredClone(useApp.getState().book);
+    useApp.setState({ book: structuredClone(base) });
+    closePosition(p.id, 214.21836, 'TRAIL', 1_000);
+    const b = structuredClone(useApp.getState().book);
+    a.positions[p.id].updatedAt = 9e15; // A diubah paling akhir (dulu: posisi A menang, ledger B menang)
+    return { a, b, id: p.id };
+  }
+  const pnlOf = (bk: Book, id: string) => bk.ledger[`${id}:pnl`].amt;
+  const roe = (bk: Book, id: string) => { const p = bk.positions[id]; return ((p.entry - p.exit!) / p.entry) * p.leverage * 100; };
+  it('exit, PnL & fee tutup selalu dari device yang sama (yang ketutup duluan), urutan merge tidak berpengaruh', () => {
+    const { a, b, id } = twoDevices();
+    for (const m of [mergeBooks(a, b), mergeBooks(b, a)]) {
+      expect(m.positions[id].closedAt).toBe(1_000);
+      expect(roe(m, id)).toBeCloseTo(14, 6);
+      expect((pnlOf(m, id) / 100) * 100).toBeCloseTo(14, 6);
+      expect(-m.ledger[`${id}:fee-close`].amt).toBeCloseTo(214.21836 * m.positions[id].qty * 0.0005, 9);
+    }
+    expect(mergeBooks(a, b)).toEqual(mergeBooks(b, a));
+    const m = mergeBooks(a, b);
+    expect(mergeBooks(m, a)).toEqual(m);
+  });
+  it('data lama yang sudah tidak cocok (tanpa closeFee) dibetulkan saat sinkron', () => {
+    const { a, b, id } = twoDevices();
+    // kondisi rusak: posisi dari A (+86%), ledger dari B (+14%)
+    const broken: Book = { ...a, ledger: { ...b.ledger } };
+    delete broken.positions[id].closeFee;
+    broken.positions[id].closedAt = 1_000; // cuma ada versi ini
+    const m = mergeBooks(broken, broken);
+    expect(pnlOf(m, id)).toBeCloseTo((roe(m, id) / 100) * 100, 6);
+    expect(roe(m, id)).toBeCloseTo(85.98, 2);
+    expect(-m.ledger[`${id}:fee-close`].amt).toBeCloseTo(198.57904 * m.positions[id].qty * 0.0005, 9);
+    expect(mergeBooks(m, m)).toEqual(m);
   });
 });
