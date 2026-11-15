@@ -18,6 +18,7 @@ const ALLOWED = new Set([
 
 const CACHE_SECONDS: Record<string, number> = {
   '/fapi/v1/exchangeInfo': 3600,
+  '/idr': 600,
   '/fapi/v1/ticker/24hr': 5,
   '/fapi/v1/klines': 5,
 };
@@ -25,6 +26,7 @@ const CACHE_SECONDS: Record<string, number> = {
 export async function handleBinance(reqUrl: string): Promise<Response> {
   const url = new URL(reqUrl, 'http://localhost');
   const path = url.searchParams.get('p') || '';
+  if (path === '/idr') return idrRate();
   if (!ALLOWED.has(path)) {
     return json({ error: 'endpoint tidak diizinkan', path }, 400);
   }
@@ -53,12 +55,16 @@ export async function handleBinance(reqUrl: string): Promise<Response> {
     body = JSON.stringify(rows.map((r) => [r[0], +(r[1] as string), +(r[2] as string), +(r[3] as string), +(r[4] as string), +(r[5] as string)]));
   }
   if (path === '/fapi/v1/exchangeInfo') {
-    const info = JSON.parse(text) as { symbols: { symbol: string; contractType: string; quoteAsset: string; status: string }[] };
-    body = JSON.stringify({
-      symbols: info.symbols
-        .filter((s) => s.contractType === 'PERPETUAL' && s.quoteAsset === 'USDT' && s.status === 'TRADING')
-        .map((s) => s.symbol),
-    });
+    type Filter = { filterType: string; notional?: string; minQty?: string };
+    const info = JSON.parse(text) as { symbols: { symbol: string; contractType: string; quoteAsset: string; status: string; filters?: Filter[] }[] };
+    const list = info.symbols.filter((s) => s.contractType === 'PERPETUAL' && s.quoteAsset === 'USDT' && s.status === 'TRADING');
+    // aturan order minimal per koin: [nilai posisi minimal (USDT), qty minimal]
+    const rules: Record<string, [number, number]> = {};
+    for (const s of list) {
+      const f = (t: string) => s.filters?.find((x) => x.filterType === t);
+      rules[s.symbol] = [+(f('MIN_NOTIONAL')?.notional ?? 0), Math.max(+(f('LOT_SIZE')?.minQty ?? 0), +(f('MARKET_LOT_SIZE')?.minQty ?? 0))];
+    }
+    body = JSON.stringify({ symbols: list.map((s) => s.symbol), rules });
   }
   const maxAge = CACHE_SECONDS[path] ?? 0;
   return new Response(body, {
@@ -69,6 +75,28 @@ export async function handleBinance(reqUrl: string): Promise<Response> {
       'access-control-allow-origin': '*',
     },
   });
+}
+
+/** Kurs USDT → Rupiah: Indodax (pasar USDT/IDR), cadangan kurs USD/IDR. */
+async function idrRate(): Promise<Response> {
+  const headers = { 'content-type': 'application/json', 'cache-control': 'public, s-maxage=600, max-age=60', 'access-control-allow-origin': '*' };
+  try {
+    const r = await fetch('https://indodax.com/api/ticker/usdtidr', { headers: { accept: 'application/json' } });
+    const j = (await r.json()) as { ticker?: { last?: string } };
+    const rate = +(j.ticker?.last ?? 0);
+    if (rate > 1000) return new Response(JSON.stringify({ rate, source: 'Indodax USDT/IDR' }), { status: 200, headers });
+  } catch {
+    /* coba cadangan */
+  }
+  try {
+    const r = await fetch('https://open.er-api.com/v6/latest/USD');
+    const j = (await r.json()) as { rates?: { IDR?: number } };
+    const rate = +(j.rates?.IDR ?? 0);
+    if (rate > 1000) return new Response(JSON.stringify({ rate, source: 'kurs USD/IDR' }), { status: 200, headers });
+  } catch {
+    /* gagal semua */
+  }
+  return json({ error: 'kurs Rupiah tidak tersedia' }, 502);
 }
 
 function json(obj: unknown, status: number) {

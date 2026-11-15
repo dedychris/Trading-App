@@ -3,7 +3,7 @@ import { btcConflict, RULES, TFS, type TFState } from './signals';
 import { fmtDuration, fmtNum, fmtPct } from './format';
 import { moves } from './sim';
 import type { Book, Position } from '../store/types';
-import { positionLedger } from '../store/book';
+import { learningTrades } from '../store/book';
 
 export type AuditPoint = { tone: 'good' | 'bad' | 'info'; text: string };
 
@@ -61,8 +61,11 @@ type Bucket = { w: number; n: number };
 
 /** Insight dari riwayat trade lu sendiri (opsi D) — muncul setelah sampel cukup. */
 export function insights(book: Book): Insight[] {
-  const closed = Object.values(book.positions).filter((p) => p.status === 'closed');
-  const isWin = (p: Position) => positionLedger(book, p.id).net > 0;
+  // sesi sekarang + arsip sesi lama
+  const trades = learningTrades(book);
+  const closed = trades.map((x) => x.p);
+  const netOf = new Map(trades.map((x) => [x.p, x.net]));
+  const isWin = (p: Position) => (netOf.get(p) ?? 0) > 0;
   const groups: Record<string, Record<string, Bucket>> = {};
   const add = (dim: string, k: string, w: boolean) => {
     groups[dim] ??= {};

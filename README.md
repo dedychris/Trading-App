@@ -1,6 +1,6 @@
 # Momentum Scanner Pro
 
-Paper trading semi-otomatis untuk **Binance Futures USDⓈ-M**: data **100% live dari Binance**, uang virtual 10.000 USDT, winrate dari **backtest data historis asli**. Bisa dibuka di HP (install sebagai app/PWA) dan laptop, data sinkron lewat Supabase.
+Paper trading semi-otomatis untuk **Binance Futures USDⓈ-M**: data **100% live dari Binance**, uang virtual dengan **saldo awal bebas** (misal Rp 150.000), winrate dari **backtest data historis asli**. Bisa dibuka di HP (install sebagai app/PWA) dan laptop, data sinkron lewat Supabase.
 
 > Ini simulasi buat belajar & menguji strategi. Winrate = statistik histori, bukan jaminan profit.
 
@@ -22,7 +22,11 @@ Paper trading semi-otomatis untuk **Binance Futures USDⓈ-M**: data **100% live
 - **Riwayat + Audit**: snapshot indikator saat entry & exit, analisa kenapa menang/kalah. Export CSV.
 - **Belajar dari pola**: tiap trade menyimpan pola kondisi saat entry (setup, arah, BTC, ADX, RSI, volume, SL vs ATR, leverage). Kalau sinyal baru mirip pola yang ≥ 3 kali sering kena SL, muncul peringatan ⚠️; kalau mirip pola yang sering kena TP, ditandai ✅. Hanya peringatan, tidak memblokir order.
 - **Statistik**: grafik saldo, winrate asli, rata-rata profit/rugi, profit factor, drawdown, total fee & funding, pola dari trade lu.
-- **Pengaturan**: mode terang/gelap, alert suara & notifikasi, reset saldo ke 10.000 USDT.
+- **Saldo awal bebas + sesi**: Pengaturan → Akun paper trading → *Mulai sesi baru*. Isi dalam Rupiah (dikonversi pakai kurs live USDT/IDR Indodax, bisa diubah manual) atau USDT. Hitungan tetap USDT; saldo, margin & PnL juga tampil dalam Rupiah (kurs dikunci selama sesi).
+- **Arsip sesi lama**: mulai sesi baru **tidak menghapus** riwayat. Posisi terbuka ditutup di harga live, order pending dibatalkan, trade selesai disimpan di arsip (Riwayat → pilih sesi, bisa export CSV). Arsip tetap dipakai untuk peringatan pola ⚠️/✅, insight, dan "Trade lu" di form order. Statistik & grafik saldo hanya sesi sekarang.
+- **Compounding**: margin dihitung dari saldo sekarang, jadi cuan langsung ikut jadi modal. Auto default *Bagi rata*: saldo ÷ maks posisi auto (modal terpakai penuh); manual default 10% saldo.
+- **Minimal order Binance**: nilai posisi (margin × leverage) harus ≥ MIN_NOTIONAL & qty minimal dari exchangeInfo (umumnya 5 USDT, BTC/ETH lebih besar). Order di bawahnya ditolak, auto melewati dengan alasan.
+- **Pengaturan**: mode terang/gelap, alert suara & notifikasi, saldo awal & sesi baru.
 
 ## Jalankan di laptop
 ```bash

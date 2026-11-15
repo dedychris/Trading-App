@@ -1,17 +1,18 @@
 import { useMemo } from 'react';
 import { insights } from '../lib/audit';
 import { allPatterns, MIN_PATTERN_N, patternText } from '../lib/patterns';
-import { fmtPct, fmtUsd } from '../lib/format';
+import { fmtIdr, fmtPct, fmtTime, fmtUsd } from '../lib/format';
 import { SETUP_INFO, SETUP_ORDER } from '../lib/signals';
-import { START_BALANCE } from '../lib/sim';
 import { useApp } from '../store/app';
-import { positionLedger, walletBalance } from '../store/book';
+import { archiveList, learningTrades, positionLedger, startBalanceOf, walletBalance } from '../store/book';
 import { EquityChart } from './Chart';
-import { Signed, Stat } from './ui';
+import { Idr, Signed, Stat } from './ui';
 
 export function StatsPage() {
   const book = useApp((s) => s.book);
+  const start = startBalanceOf(book);
   const s = useMemo(() => {
+    const start = startBalanceOf(book);
     const closed = Object.values(book.positions).filter((p) => p.status === 'closed');
     const nets = closed.map((p) => positionLedger(book, p.id).net);
     const wins = nets.filter((x) => x > 0);
@@ -23,13 +24,13 @@ export function StatsPage() {
       if (e.kind === 'funding') funding += e.amt;
     }
     const entries = Object.values(book.ledger).sort((a, b) => a.t - b.t);
-    let bal = START_BALANCE;
+    let bal = start;
     const curve = [{ t: book.epochStartedAt, v: bal }];
     for (const e of entries) {
       bal += e.amt;
       curve.push({ t: e.t, v: bal });
     }
-    let peak = START_BALANCE;
+    let peak = start;
     let maxDd = 0;
     for (const p of curve) {
       peak = Math.max(peak, p.v);
@@ -55,19 +56,25 @@ export function StatsPage() {
       bySetup,
       tips: insights(book),
       patterns: allPatterns(book),
+      learnN: learningTrades(book).length,
     };
   }, [book]);
   const wallet = walletBalance(book);
-  const net = wallet - START_BALANCE;
+  const net = wallet - start;
+  const nArch = archiveList(book).length;
   return (
     <div className="space-y-4">
+      <div className="text-xs text-mute">
+        Statistik sesi sekarang · mulai {book.startIdr ? `${fmtIdr(book.startIdr)} (${fmtUsd(start)} USDT)` : `${fmtUsd(start)} USDT`} · {fmtTime(book.epochStartedAt)}
+        {nArch > 0 && <> · {nArch} sesi lama di arsip (lihat Riwayat)</>}
+      </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Stat label="Saldo" value={fmtUsd(wallet)} sub={<Signed v={net}>{fmtUsd(net, true)} ({fmtPct((net / START_BALANCE) * 100, 2, true)})</Signed>} />
+        <Stat label="Saldo" value={<>{fmtUsd(wallet)}<Idr v={wallet} prefix="" className="block text-xs font-semibold text-mute" /></>} sub={<Signed v={net}>{fmtUsd(net, true)} ({fmtPct((net / start) * 100, 2, true)}) <Idr v={net} sign prefix="· " /></Signed>} />
         <Stat label="Winrate asli lu" value={s.winrate === null ? '—' : fmtPct(s.winrate, 1)} sub={`${s.n} trade`} />
         <Stat label="Rata-rata profit" value={<span className="text-up">{fmtUsd(s.avgWin, true)}</span>} sub={<>rugi <span className="text-down">{fmtUsd(s.avgLoss, true)}</span></>} />
         <Stat label="Profit factor" value={s.pf === null ? '—' : s.pf.toFixed(2)} sub={`max drawdown ${fmtPct(s.maxDd, 1)}`} />
-        <Stat label="Total fee" value={<span className="text-down">{fmtUsd(s.fee)}</span>} />
-        <Stat label="Total funding" value={<Signed v={s.funding}>{fmtUsd(s.funding, true)}</Signed>} />
+        <Stat label="Total fee" value={<span className="text-down">{fmtUsd(s.fee)}</span>} sub={<Idr v={s.fee} sign />} />
+        <Stat label="Total funding" value={<Signed v={s.funding}>{fmtUsd(s.funding, true)}</Signed>} sub={<Idr v={s.funding} sign />} />
       </div>
       <div className="card p-3">
         <div className="label mb-2">Grafik saldo</div>
@@ -107,14 +114,14 @@ export function StatsPage() {
                   </tbody>
                 </table>
               ) : (
-                <div className="text-sm text-mute">Belum ada. Pola baru dihitung setelah kondisi yang sama terjadi minimal {MIN_PATTERN_N} kali ({s.patterns.total} trade selesai).</div>
+                <div className="text-sm text-mute">Belum ada. Pola baru dihitung setelah kondisi yang sama terjadi minimal {MIN_PATTERN_N} kali ({s.patterns.total} trade selesai, termasuk arsip).</div>
               )}
             </div>
           );
         })}
       </div>
       <div className="card p-3">
-        <div className="label mb-2">Pola dari trade lu</div>
+        <div className="label mb-2">Pola dari trade lu {s.learnN > s.n && <span className="normal-case tracking-normal text-mute">· {s.learnN} trade, termasuk arsip sesi lama</span>}</div>
         {s.tips.length ? (
           <ul className="space-y-1.5 text-sm">{s.tips.map((t, i) => <li key={i}>💡 {t.text}</li>)}</ul>
         ) : (

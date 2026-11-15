@@ -2,7 +2,7 @@
 // sering kena SL dan menandai pola yang sering kena TP, dari riwayat trade lu sendiri.
 import { btcConflict, RULES, SETUP_INFO, setupShort, type BtcTrend, type Dir, type SetupKey, type TF, type TFState } from './signals';
 import { moves } from './sim';
-import { positionLedger } from '../store/book';
+import { learningTrades, positionLedger } from '../store/book';
 import type { Book, Position } from '../store/types';
 
 export const MIN_PATTERN_N = 3;
@@ -39,9 +39,12 @@ export function positionFeatures(p: Position): Feat[] {
 
 /** TP = menang, SL/likuidasi = kalah, tutup manual = dilihat dari PnL bersih. */
 export function isWin(book: Book, p: Position) {
+  return winOf(p, positionLedger(book, p.id).net);
+}
+function winOf(p: Position, net: number) {
   if (p.reason === 'TP' || p.reason === 'TRAIL') return true;
   if (p.reason === 'SL' || p.reason === 'LIQ') return false;
-  return positionLedger(book, p.id).net > 0;
+  return net > 0;
 }
 
 type Trade = { keys: Set<string>; win: boolean };
@@ -49,9 +52,8 @@ const idxCache = new WeakMap<Book, Trade[]>();
 export function tradeIndex(book: Book): Trade[] {
   const hit = idxCache.get(book);
   if (hit) return hit;
-  const out = Object.values(book.positions)
-    .filter((p) => p.status === 'closed')
-    .map((p) => ({ keys: new Set(positionFeatures(p).map((f) => f.k)), win: isWin(book, p) }));
+  // sesi sekarang + arsip sesi lama (bahan belajar)
+  const out = learningTrades(book).map(({ p, net }) => ({ keys: new Set(positionFeatures(p).map((f) => f.k)), win: winOf(p, net) }));
   idxCache.set(book, out);
   return out;
 }
@@ -100,9 +102,8 @@ export function matchPatterns(feats: Feat[], book: Book): { bad: PatternStat | n
 /** Semua pola dari riwayat (untuk halaman Statistik). */
 export function allPatterns(book: Book) {
   const trades = tradeIndex(book);
-  const closed = Object.values(book.positions).filter((p) => p.status === 'closed');
   const seen = new Map<string, Feat[]>();
-  for (const p of closed) for (const c of combos(positionFeatures(p), 3)) seen.set(c.map((f) => f.k).join('&'), c);
+  for (const { p } of learningTrades(book)) for (const c of combos(positionFeatures(p), 3)) seen.set(c.map((f) => f.k).join('&'), c);
   const stats = [...seen.values()].map((c) => statFor(c, trades)).filter((s) => s.n >= MIN_PATTERN_N);
   const best = stats.filter((s) => s.winRate >= 0.6).sort((a, b) => rank(a, b, (x) => x.winRate)).slice(0, 6);
   const worst = stats.filter((s) => s.winRate <= 0.4).sort((a, b) => rank(a, b, (x) => 1 - x.winRate)).slice(0, 6);

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { getDerivatives, type Derivs } from '../lib/binance';
+import { getDerivatives, minNotional, type Derivs } from '../lib/binance';
 import { avgOutcome, filterComparison } from '../lib/backtest';
 import { loadSymbolSeries, statesFrom } from '../lib/scanner';
 import { btcConflict, classify, FILTER_INFO, RULES, sentimentPass, setupShort, TFS, type Dir, type TF } from '../lib/signals';
@@ -9,7 +9,7 @@ import { availableBalance, marginFor, openPosition, placeLimit, useApp, validate
 import type { Snapshot } from '../store/types';
 import type { SymbolSeries } from '../lib/backtest';
 import { PriceChart } from './Chart';
-import { DirBadge, Modal, Signed, WinratePill } from './ui';
+import { DirBadge, Idr, Modal, Signed, WinratePill } from './ui';
 import { useActiveFilters, useFlash, useMyWinrate, useWinrate } from './hooks';
 import { PatternAlert } from './PatternAlert';
 
@@ -237,6 +237,8 @@ function OrderForm({ symbol, price, defaultDir, states, derivs }: { symbol: stri
   const slTight = pv && g15 && pv.slMovePct < g15.v.atrPct;
   const conflict = btc && symbol !== 'BTCUSDT' && btcConflict(btc.trend, dir);
   const sentimentBad = derivs && !sentimentPass(dir, derivs.fundingRate, derivs.longPct);
+  const minN = entry > 0 ? minNotional(symbol, entry) : 0;
+  const belowMin = margin > 0 && margin * lev < minN - 1e-9;
 
   const submit = () => {
     const params = { symbol, dir, leverage: lev, margin, price: entry, type, snap: null as Snapshot | null, tpPct, slPct, trailPct };
@@ -314,7 +316,15 @@ function OrderForm({ symbol, price, defaultDir, states, derivs }: { symbol: stri
             <span className="num whitespace-nowrap text-sm text-mute">= {fmtUsd(margin)} USDT</span>
           </div>
         )}
-        <div className="mt-1 text-[11px] text-mute num">Tersedia {fmtUsd(availableBalance(book))} USDT</div>
+        <div className="mt-1 text-[11px] text-mute num">
+          <Idr v={margin} prefix="margin ≈ " suffix=" · " />
+          Tersedia {fmtUsd(availableBalance(book))} USDT <Idr v={availableBalance(book)} prefix="(" suffix=")" />
+        </div>
+        {minN > 0 && (
+          <div className={`mt-1 text-[11px] num ${belowMin ? 'text-down' : 'text-mute'}`}>
+            {belowMin ? '✗ ' : ''}Min. nilai posisi Binance {base(symbol)}: {fmtUsd(minN)} USDT → margin minimal {fmtUsd(minN / lev)} USDT di {lev}× <Idr v={minN / lev} prefix="(≈ " suffix=")" />
+          </div>
+        )}
       </div>
 
       <div>
@@ -354,8 +364,8 @@ function OrderForm({ symbol, price, defaultDir, states, derivs }: { symbol: stri
           <Row k="Nilai posisi" v={`${fmtUsd(pv.notional)} USDT`} />
           <Row k={`Fee buka + tutup${settings.bnb ? ' (BNB −10%)' : ''}`} v={`${fmtUsd(pv.feeOpen + pv.feeClose)} USDT`} />
           <div className="my-1 border-t border-line" />
-          <Row k={trailPct ? 'Minimal kalau kena TP' : 'Kalau kena TP'} v={<span className="text-up font-semibold">{fmtUsd(pv.netWin, true)} USDT ({fmtPct(pv.netWinPct, 1, true)})</span>} />
-          <Row k="Kalau kena SL" v={<span className="text-down font-semibold">{fmtUsd(pv.netLoss, true)} USDT ({fmtPct(pv.netLossPct, 1, true)})</span>} />
+          <Row k={trailPct ? 'Minimal kalau kena TP' : 'Kalau kena TP'} v={<span className="text-up font-semibold">{fmtUsd(pv.netWin, true)} USDT ({fmtPct(pv.netWinPct, 1, true)})<Idr v={pv.netWin} sign prefix="" className="block text-right text-[11px] font-normal" /></span>} />
+          <Row k="Kalau kena SL" v={<span className="text-down font-semibold">{fmtUsd(pv.netLoss, true)} USDT ({fmtPct(pv.netLossPct, 1, true)})<Idr v={pv.netLoss} sign prefix="" className="block text-right text-[11px] font-normal" /></span>} />
           <Row k="Winrate minimal biar impas" v={fmtPct(pv.breakevenWinrate, 0)} />
           {pv.netWin <= (pv.feeOpen + pv.feeClose) * 2 && <div className="text-[11px] text-warn">⚠️ TP terlalu kecil dibanding fee — sebagian besar profit kemakan fee.</div>}
           {avg && avg.n > 0 && (
@@ -402,14 +412,14 @@ function OrderForm({ symbol, price, defaultDir, states, derivs }: { symbol: stri
       </div>
 
       {!confirm ? (
-        <button className={`${dir === 'LONG' ? 'btn-up' : 'btn-down'} w-full py-3 text-base`} disabled={!pv} onClick={() => setConfirm(true)}>
+        <button className={`${dir === 'LONG' ? 'btn-up' : 'btn-down'} w-full py-3 text-base`} disabled={!pv || belowMin} onClick={() => setConfirm(true)}>
           {type === 'market' ? 'Open' : 'Pasang limit'} {dir} {lev}×
         </button>
       ) : (
         <div className="space-y-2">
           <div className="text-center text-sm">
             Yakin {dir} {base(symbol)} {lev}× margin {fmtUsd(margin)} USDT?
-            <div className="text-xs text-mute">Kalau kena SL, lu rugi ±{fmtUsd(-(pv?.netLoss ?? 0))} USDT</div>
+            <div className="text-xs text-mute">Kalau kena SL, lu rugi ±{fmtUsd(-(pv?.netLoss ?? 0))} USDT <Idr v={-(pv?.netLoss ?? 0)} prefix="(≈ " suffix=")" /></div>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <button className="btn-ghost" onClick={() => setConfirm(false)}>Batal</button>

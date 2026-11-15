@@ -70,7 +70,8 @@ export type AutoSettings = {
   enabled: boolean;
   deviceId: string | null; // null = jalan di semua device; isi = cuma device ini
   leverage: number;
-  marginMode: 'fixed' | 'percent';
+  /** fixed = nominal tetap · percent = % saldo · split = saldo dibagi rata ke maks posisi (compounding, modal terpakai penuh) */
+  marginMode: 'fixed' | 'percent' | 'split';
   marginFixed: number;
   marginPercent: number;
   tpPct: number;
@@ -107,9 +108,25 @@ export type Settings = {
   updatedAt: number;
 };
 
+/** Sesi paper trading lama yang disimpan sebagai bahan belajar (trade selesai + ledger-nya). */
+export type ArchivedSession = {
+  epoch: number;
+  startedAt: number;
+  endedAt: number;
+  startBalance: number; // USDT
+  startIdr?: number; // saldo awal dalam Rupiah (kalau sesi dimulai dari Rupiah)
+  idrRate?: number; // kurs Rp per USDT yang dikunci saat sesi dimulai
+  positions: Record<string, Position>;
+  ledger: Record<string, LedgerEntry>;
+};
+
 export type Book = {
   epoch: number;
   epochStartedAt: number;
+  startBalance?: number; // saldo awal sesi ini (USDT); kosong = 10.000 (sesi lama)
+  startIdr?: number;
+  idrRate?: number; // kurs Rp per USDT dikunci saat sesi dimulai (dipakai untuk tampilan Rupiah)
+  archives?: Record<string, ArchivedSession>; // key = epoch
   positions: Record<string, Position>;
   orders: Record<string, PendingOrder>;
   ledger: Record<string, LedgerEntry>;

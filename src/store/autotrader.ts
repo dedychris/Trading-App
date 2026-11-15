@@ -1,15 +1,28 @@
 // 🤖 Auto trading (simulasi). Jalan selama app terbuka: langsung scan saat aktif, lalu tiap candle 15m close,
 // buka posisi untuk sinyal ⭐ Golden / 3TF / 1H+15M searah (+ 4H+1H kalau aktif) yang BARU muncul dan lolos syarat.
 import { findSignals, winrate } from '../lib/backtest';
-import { getDerivatives } from '../lib/binance';
+import { getDerivatives, minNotional } from '../lib/binance';
 import { fmtPct, fmtPrice, fmtUsd, base } from '../lib/format';
 import { beep, systemNotify } from '../lib/notify';
 import { atrPass, btcConflict, filterPass, sentimentPass, SETUP_INFO, setupShort, type SetupKey } from '../lib/signals';
-import { moves, previewOrder } from '../lib/sim';
+import { feeRate, moves, previewOrder } from '../lib/sim';
 import { availableBalance, openPosition, useApp, type AutoLog } from './app';
 import { walletBalance } from './book';
 import { doScan } from './scan';
-import type { Snapshot } from './types';
+import type { AutoSettings, Book, Snapshot } from './types';
+
+/**
+ * Margin per posisi auto. Semua mode dihitung dari saldo SEKARANG (kecuali nominal tetap),
+ * jadi cuan langsung ikut jadi modal trade berikutnya (compounding).
+ * split: saldo dibagi rata ke maks posisi auto → modal terpakai penuh; dibatasi saldo tersedia
+ * (dikurangi margin yang sedang dipesan di run ini & fee buka).
+ */
+export function autoMargin(a: AutoSettings, b: Book, reserved = 0) {
+  if (a.marginMode === 'fixed') return a.marginFixed;
+  if (a.marginMode === 'percent') return (walletBalance(b) * a.marginPercent) / 100;
+  const avail = (availableBalance(b) - reserved) / (1 + a.leverage * feeRate('taker', b.settings.bnb));
+  return Math.max(0, Math.min(walletBalance(b) / Math.max(1, a.maxOpen), avail));
+}
 
 export const AUTO_KEYS: SetupKey[] = ['GOLD', '3TF'];
 // 1H+15M searah selalu ikut (cukup 1H & 15M searah); 4H+1H opsional
@@ -106,6 +119,7 @@ function evaluate() {
     .sort((x, y) => (y.wr.pct ?? 0) - (x.wr.pct ?? 0));
 
   let planned = 0; // posisi yang sedang dibuka di run ini (pembukaan async)
+  let reserved = 0; // margin + fee buka posisi yang sedang dibuka di run ini
   for (const { r, wr } of ranked) {
     const setup = r.setup!;
     const tag = `${base(r.symbol)} ${setup.dir} (${setupShort(setup.key)})`;
@@ -152,7 +166,7 @@ function evaluate() {
       continue;
     }
     const price = useApp.getState().prices[r.symbol] ?? r.price;
-    const margin = a.marginMode === 'fixed' ? a.marginFixed : (walletBalance(b) * a.marginPercent) / 100;
+    const margin = autoMargin(a, b, reserved);
     const pv = previewOrder({ dir: setup.dir, entry: price, leverage: a.leverage, margin, entryType: 'market', bnb: b.settings.bnb, tpPct: a.tpPct, slPct: a.slPct });
     // sampel yang dipakai winrate: koin ini kalau ≥ 20 kejadian, selain itu gabungan 40 koin
     const sample = wr.method === 'koin' ? wr.coin.n : wr.pool.n;
@@ -161,11 +175,17 @@ function evaluate() {
       skip(`winrate ${wr.pct === null ? 'belum ada data' : fmtPct(wr.pct, 0)} (${sample} kejadian) di bawah winrate impas ${fmtPct(pv.breakevenWinrate, 0)}`);
       continue;
     }
-    if (margin > availableBalance(b)) {
+    if (!(margin > 0) || margin > availableBalance(b) - reserved + 1e-9) {
       skip(`saldo tersedia tidak cukup untuk margin ${fmtUsd(margin)} USDT`);
       continue;
     }
+    const minN = minNotional(r.symbol, price);
+    if (margin * a.leverage < minN) {
+      skip(`nilai posisi ${fmtUsd(margin * a.leverage)} USDT di bawah minimal Binance ${fmtUsd(minN)} USDT (butuh margin ≥ ${fmtUsd(minN / a.leverage)} USDT di ${a.leverage}×)`);
+      continue;
+    }
     planned++;
+    reserved += margin * (1 + a.leverage * feeRate('taker', b.settings.bnb)); // margin + fee buka
     void openAuto_({ id, symbol: r.symbol, setup, price, margin, wrPct: wr.pct, wrN: sample, smallSample: smallSample || !a.requireWinrate, breakeven: pv.breakevenWinrate, tf: r.tf, needSentiment: book.settings.filters.sentiment, tag });
   }
 }

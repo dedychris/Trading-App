@@ -6,7 +6,8 @@ let fresh = true;
 let sigAge = 20_000;
 let wrMock = { pct: 70, coin: { wins: 21, n: 30 }, pool: { wins: 200, n: 300 }, method: 'koin', periodDays: 10 };
 vi.mock('../src/store/scan', () => ({ doScan: vi.fn(async () => {}) }));
-vi.mock('../src/lib/binance', () => ({ getDerivatives: vi.fn(async () => ({ fundingRate: 0.0001, longPct: 55, oiChange24h: 1, nextFundingTime: 0, markPrice: 1, openInterest: 1, longShortRatio: 1.2 })) }));
+let minN = 5;
+vi.mock('../src/lib/binance', () => ({ minNotional: () => minN, getDerivatives: vi.fn(async () => ({ fundingRate: 0.0001, longPct: 55, oiChange24h: 1, nextFundingTime: 0, markPrice: 1, openInterest: 1, longShortRatio: 1.2 })) }));
 vi.mock('../src/lib/backtest', () => ({
   findSignals: () => [{ i: 1, t: fresh ? Date.now() - sigAge : Date.now() - 3_600_000, dir: 'LONG', entry: 100, atrPct: 0.2, f: { volume: true, ema200: true, bollinger: true } }],
   winrate: () => wrMock,
@@ -45,6 +46,7 @@ describe('auto trading', () => {
   beforeEach(() => {
     fresh = true;
     sigAge = 20_000;
+    minN = 5;
     wrMock = { pct: 70, coin: { wins: 21, n: 30 }, pool: { wins: 200, n: 300 }, method: 'koin', periodDays: 10 };
   });
   it('buka posisi Golden baru dengan setting auto (TP/SL/trailing, label AUTO), maks posisi dihormati', async () => {
@@ -115,7 +117,7 @@ describe('auto trading', () => {
     const old = defaultSettings();
     old.auto = { ...old.auto, dailyLossPct: 5, requireWinrate: true, rulesV: undefined };
     const m = migrateSettings(old);
-    expect(m.auto).toMatchObject({ dailyLossPct: 15, requireWinrate: false, maxSlPerCoinDay: 3, rulesV: 2 });
+    expect(m.auto).toMatchObject({ dailyLossPct: 15, requireWinrate: false, maxSlPerCoinDay: 3, rulesV: 3, marginMode: 'split' });
     expect(migrateSettings({ ...m, auto: { ...m.auto, dailyLossPct: 8 } }).auto.dailyLossPct).toBe(8);
   });
   it('syarat winrate nyala: winrate rendah tapi sampel < 10 → diabaikan & tetap entry; sampel besar → dilewati', async () => {
@@ -131,5 +133,30 @@ describe('auto trading', () => {
     await flush();
     expect(open().length).toBe(0);
     expect(useApp.getState().autoLog[0].text).toMatch(/\(50 kejadian\) di bawah winrate impas/);
+  });
+  it('compounding "bagi rata": modal 9 USDT dibagi ke maks posisi, cuan ikut jadi modal', async () => {
+    const { autoMargin } = await import('../src/store/autotrader');
+    setup([{ symbol: 'AAAUSDT' }, { symbol: 'BBBUSDT' }, { symbol: 'CCCUSDT' }], 'BULLISH', { marginMode: 'split' }, (b) => { b.startBalance = 9; });
+    await runAutoOnce();
+    await flush();
+    const ps = open();
+    expect(ps.length).toBe(2);
+    const b = useApp.getState().book;
+    const locked = ps.reduce((x, p) => x + p.margin, 0);
+    expect(locked).toBeGreaterThan(8.9); // hampir seluruh saldo terpakai (sisa = fee buka)
+    expect(locked + 1e-9).toBeLessThanOrEqual(9);
+    const { walletBalance } = await import('../src/store/book');
+    expect(walletBalance(b) - locked).toBeGreaterThanOrEqual(-1e-9); // saldo tersedia tidak minus
+    // saldo naik 10% → jatah per posisi ikut naik
+    const bigger = { ...b, positions: {}, ledger: { ...b.ledger, x: { id: 'x', t: 1, amt: 0.9, kind: 'pnl' as const, posId: 'x' } } };
+    expect(autoMargin(b.settings.auto, bigger)).toBeGreaterThan(4.9);
+  });
+  it('nilai posisi di bawah minimal Binance → dilewati dengan alasan', async () => {
+    minN = 100;
+    setup([{ symbol: 'AAAUSDT' }], 'BULLISH', { marginMode: 'split' }, (b) => { b.startBalance = 9; });
+    await runAutoOnce();
+    await flush();
+    expect(open().length).toBe(0);
+    expect(useApp.getState().autoLog[0].text).toMatch(/di bawah minimal Binance 100\.00 USDT/);
   });
 });
