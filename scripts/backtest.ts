@@ -1,5 +1,5 @@
 // Backtest strategi pakai data asli Binance (hasil scripts/download-data.sh).
-// Pakai: npx tsx scripts/backtest.ts <folder-data> [--out public/backtest.json] [--idr 16500]
+// Pakai: npx tsx scripts/backtest.ts <folder-data> [--out public/backtest.json] [--modal 200000] [--idr 16500]
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runBacktest } from '../core/backtest.js';
@@ -15,6 +15,7 @@ const arg = (k: string) => {
 };
 const out = arg('--out');
 const idr = +(arg('--idr') ?? 16500);
+const modalIdr = +(arg('--modal') ?? 200_000);
 
 function load(): Record<string, Candle[]> {
   const files = readdirSync(dir).filter((f) => f.endsWith('.csv')).sort();
@@ -49,14 +50,9 @@ const variants: Row[] = [
   { name: '1H/4H swing, TP 1R+2,5R', cfg: { ...DEFAULT_CONFIG, mode: 'swing', biasFast: 50, biasSlow: 200, slAtr: 1.5, tp2R: 2.5, trailAtr: 2, timeStopBars: 32 } },
   { name: '15m/1H intraday, TP 1R+2,5R', cfg: { ...DEFAULT_CONFIG, mode: 'intraday', biasFast: 50, biasSlow: 200, slAtr: 1.5, tp2R: 2.5, trailAtr: 2, timeStopBars: 32 } },
 ];
-// Batas tahun untuk cek konsistensi (data mulai Nov)
+// Hasil per tahun kalender untuk cek konsistensi
 const years: [string, number, number][] = [];
-for (let y = new Date(t0).getUTCFullYear(); ; y++) {
-  const a = Date.UTC(y, 10, 1);
-  const b = Date.UTC(y + 1, 10, 1);
-  if (a > t1) break;
-  if (b > t0) years.push([`Nov${String(y).slice(2)}–Okt${String(y + 1).slice(2)}`, a, b]);
-}
+for (let y = new Date(t0).getUTCFullYear(); Date.UTC(y, 0, 1) <= t1; y++) years.push([String(y), Date.UTC(y, 0, 1), Date.UTC(y + 1, 0, 1)]);
 
 const BIG = 1000;
 const table: Record<string, unknown>[] = [];
@@ -98,11 +94,25 @@ const perCoin = syms
   .sort((a, b) => b['total R'] - a['total R']);
 console.table(perCoin);
 
-// Modal kecil: Rp 150.000
-const small = 150_000 / idr;
+// Modal kecil dalam Rupiah (kurs tetap untuk konversi), dengan batas minimal order Binance
+const small = modalIdr / idr;
+const rp = (usdt: number) => `Rp ${Math.round(usdt * idr).toLocaleString('id-ID')}`;
 const bestCfg = variants.find((v) => v.name === best[0])!.cfg;
 const rs = runBacktest(data, bestCfg, small);
-console.log(`\nModal Rp 150.000 (${small.toFixed(2)} USDT, ada batas minimal order Binance): ${rs.stats.n} trade, winrate ${pct(rs.stats.winrate)}, saldo akhir ${(small + rs.stats.pnl).toFixed(2)} USDT (${rs.stats.returnPct.toFixed(0)}%), maxDD ${rs.stats.maxDdPct.toFixed(0)}%`);
+console.log(`\nModal ${rp(small)} (${small.toFixed(2)} USDT, kurs ${idr}): ${rs.stats.n} trade, winrate ${pct(rs.stats.winrate)}, saldo akhir ${rp(small + rs.stats.pnl)} (${rs.stats.returnPct.toFixed(0)}%), maxDD ${rs.stats.maxDdPct.toFixed(0)}%`);
+let bal = small;
+const smallYears = years.map(([k, a, b]) => {
+  const tr = rs.acc.trades.filter((t) => t.closedAt >= a && t.closedAt < b);
+  const st = stats(tr, bal);
+  const start = bal;
+  let lo = bal;
+  for (const t of tr) {
+    bal += t.pnl;
+    lo = Math.min(lo, bal);
+  }
+  return { tahun: k, trade: st.n, winrate: pct(st.winrate), 'saldo awal': rp(start), 'saldo akhir': rp(bal), hasil: `${(((bal - start) / start) * 100).toFixed(0)}%`, 'saldo terendah': rp(lo), 'DD maks': `${st.maxDdPct.toFixed(0)}%` };
+});
+console.table(smallYears);
 console.log('Alasan dilewati (top):', Object.entries(rs.decisions.skipReasons).sort((a, b) => b[1] - a[1]).slice(0, 5));
 
 const monthly: Record<string, number> = {};
@@ -125,7 +135,7 @@ if (out) {
     perCoin,
     monthly,
     equity: bs.acc.equity.filter((_, i, a) => i % Math.max(1, Math.floor(a.length / 300)) === 0 || i === a.length - 1),
-    small: { startUsdt: small, startIdr: 150_000, ...summary(rs.stats) },
+    small: { startUsdt: small, startIdr: modalIdr, idrRate: idr, ...summary(rs.stats), years: smallYears },
   };
   writeFileSync(out, JSON.stringify(json));
   console.log(`\nDisimpan ke ${out}`);

@@ -52,8 +52,8 @@ npm test               # unit test mesin & bot
 ```
 Backtest dengan data asli:
 ```bash
-scripts/download-data.sh data                         # 12 bulan terakhir, 20 koin, candle 15m
-npx tsx scripts/backtest.ts data --out public/backtest.json
+scripts/download-data.sh data [bulan...]             # default 12 bulan terakhir; bisa isi mis. 2020-01 2020-02 ...
+npx tsx scripts/backtest.ts data --modal 200000 --out public/backtest.json
 npx tsx scripts/replay.ts data 2026-07-01 2026-10-31  # putar bot live di data historis → .bot-state.json untuk dashboard lokal
 DATA_DIR=data npm test                                # + tes replay
 ```

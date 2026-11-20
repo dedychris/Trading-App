@@ -23,8 +23,8 @@ export function BacktestPage() {
           {bt.coins} koin, candle {date(bt.period.from)} – {date(bt.period.to)}. Mesin yang sama dengan bot live: sinyal di candle close, entry di open candle berikutnya, fee taker/maker + slippage, SL dianggap kena duluan kalau SL & TP di candle yang sama. Risiko 1% saldo per trade.
         </p>
         <div className="mt-3 rounded-lg border border-warn/40 bg-warn/10 p-3">
-          <b>Jujur soal hasilnya:</b> setting default cuma sedikit untung dalam 2 tahun ({def.totalR > 0 ? '+' : ''}
-          {def.totalR.toFixed(1)}R) dan <b>rugi di tahun pertama</b> ({def.perYear[0]?.toFixed(1)}R). Belum ada bukti edge yang kuat. Strategi intraday 15m (gaya app lama) rugi besar bahkan sebelum fee. Paper trading ini untuk menguji ke depan, bukan jaminan profit.
+          <b>Jujur soal hasilnya:</b> setting default {def.totalR > 0 ? 'untung' : 'rugi'} {def.totalR > 0 ? '+' : ''}
+          {def.totalR.toFixed(0)}R, positif di {def.perYear.filter((y) => y > 0).length} dari {def.perYear.length} tahun, tapi rata-ratanya cuma {def.avgR.toFixed(2)}R per trade: edge-nya tipis dan bisa hilang kalau kondisi pasar berubah. Strategi 15m dan 1H (gaya app lama) rugi hampir tiap tahun. Paper trading ini untuk menguji ke depan, bukan jaminan profit.
         </div>
       </section>
 
@@ -71,12 +71,35 @@ export function BacktestPage() {
         <BarsR data={Object.entries(bt.monthly).map(([k, v]) => ({ k, v }))} />
       </section>
 
-      <section className="card p-4 text-sm">
-        <h2 className="font-semibold">Modal kecil (Rp {bt.small.startIdr.toLocaleString('id-ID')})</h2>
+      <section className="card overflow-x-auto p-4 text-sm">
+        <h2 className="font-semibold">Simulasi modal Rp {bt.small.startIdr.toLocaleString('id-ID')}</h2>
         <p className="mt-1 text-mute">
-          {bt.small.n} trade, winrate {pct(bt.small.winrate)}, hasil {bt.small.returnPct >= 0 ? '+' : ''}
-          {bt.small.returnPct.toFixed(0)}%, drawdown maks {bt.small.maxDdPct.toFixed(0)}%. Dengan modal sekecil ini, 1% risiko sering di bawah minimal order Binance (5 USDT; BTC 100, ETH 20). Posisi dinaikkan ke minimal selama risikonya ≤ 3% saldo, jadi risiko nyata per trade sering 2–3%, dan BTC/ETH hampir selalu dilewati.
+          {bt.small.n} trade, hasil {bt.small.returnPct >= 0 ? '+' : ''}
+          {bt.small.returnPct.toFixed(0)}%, drawdown maks <b className="text-down">{bt.small.maxDdPct.toFixed(0)}%</b>. Modal sekecil ini sering di bawah minimal order Binance (5 USDT; BTC 100, ETH 20). Posisi dinaikkan ke minimal selama risikonya ≤ 3% saldo, jadi risiko nyata per trade sering 1,5–3%, bukan 1%. Itu yang bikin drawdown jauh lebih dalam daripada akun besar.
         </p>
+        <table className="num mt-3 w-full min-w-[480px] text-sm">
+          <thead className="text-left text-xs text-mute">
+            <tr>
+              {['Tahun', 'Trade', 'Saldo awal', 'Saldo akhir', 'Hasil', 'DD maks'].map((h) => (
+                <th key={h} className={`py-1 font-semibold ${h === 'Tahun' ? '' : 'text-right'}`}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {bt.small.years.map((y) => (
+              <tr key={String(y.tahun)}>
+                <td className="py-1.5">{y.tahun}</td>
+                <td className="text-right">{y.trade}</td>
+                <td className="text-right">{y['saldo awal']}</td>
+                <td className="text-right">{y['saldo akhir']}</td>
+                <td className={`text-right ${String(y.hasil).startsWith('-') ? 'text-down' : 'text-up'}`}>{y.hasil}</td>
+                <td className="text-right">{y['DD maks']}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </section>
     </>
   );

@@ -59,5 +59,5 @@ export type BacktestJson = {
   variants: { name: string; mode: string; n: number; winrate: number; avgR: number; totalR: number; pf: number | null; returnPct: number; maxDdPct: number; perYear: number[] }[];
   monthly: Record<string, number>;
   perCoin: { koin: string; trade: number; winrate: string; 'total R': number }[];
-  small: { startUsdt: number; startIdr: number; n: number; winrate: number; returnPct: number; maxDdPct: number };
+  small: { startUsdt: number; startIdr: number; idrRate: number; n: number; winrate: number; returnPct: number; maxDdPct: number; years: Record<string, string | number>[] };
 };
