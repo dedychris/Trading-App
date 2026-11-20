@@ -25,7 +25,7 @@ Mesin yang dipakai bot live (`core/`) sama persis dengan yang dipakai backtest. 
 | B. Bias tren | TF harian: close > EMA20 > EMA50 = LONG, kebalikannya SHORT, selain itu netral (tidak trade). Altcoin tidak melawan bias BTC | |
 | C. Pemicu (TF 4H) | **Pullback**: EMA20 searah EMA50, harga sempat menyentuh EMA20 dalam 3 candle, lalu candle konfirmasi menutup melewati high/low candle sebelumnya, RSI 45–70 (SHORT 30–55). **Breakout**: close tembus high/low 20 candle, volume ≥ 1,5× rata-rata, close kuat, maks 2,5 ATR dari EMA20 | |
 | D. Stop loss | 2 × ATR(14) 4H | |
-| E. Ukuran posisi | Risiko **1% saldo** per trade (sudah termasuk fee). Leverage dihitung sendiri (maks 20×), margin maks 30% saldo. Kalau di bawah minimal order Binance, dinaikkan ke minimal selama risikonya ≤ 3% saldo | |
+| E. Ukuran posisi | Risiko **1% saldo** per trade (sudah termasuk fee). Leverage dihitung sendiri (maks 25×), margin maks 30% saldo. Kalau di bawah minimal order Binance, dinaikkan ke minimal selama risikonya ≤ 3% saldo | |
 | F. Keluar | TP1 di 1R: tutup 50%, SL ke impas. Sisanya trailing 3 × ATR, tanpa TP2 (profit dibiarkan lari) | |
 | G. Rem risiko | Maks 3 posisi, maks 2 searah, satu posisi per koin, stop entry hari itu kalau rugi ≤ −3R, jeda 8 candle setelah SL | |
 | Biaya | Taker 0,05%, maker 0,02% (TP), slippage 0,02% | |

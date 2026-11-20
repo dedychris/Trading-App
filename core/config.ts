@@ -75,7 +75,7 @@ export const DEFAULT_CONFIG: BotConfig = {
   atrPeriod: 14,
   slAtr: 2,
   riskPct: 1,
-  maxLeverage: 20,
+  maxLeverage: 25,
   maxMarginPct: 30,
   minOrderMaxRiskPct: 3,
   tp1R: 1,
