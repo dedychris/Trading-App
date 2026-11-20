@@ -32,7 +32,7 @@ export function aggregate(c: Candle[], fromMs: number, toMs: number): Candle[] {
 
 export type BacktestResult = { acc: Account; stats: Stats; decisions: { open: number; skip: number; skipReasons: Record<string, number> } };
 
-export function runBacktest(data15m: Record<string, Candle[]>, cfg: BotConfig, startBalance: number, opts: { from?: number; to?: number; logDecisions?: (d: Decision) => void } = {}): BacktestResult {
+export function runBacktest(data15m: Record<string, Candle[]>, cfg: BotConfig, startBalance: number, opts: { from?: number; to?: number; baseMs?: number; logDecisions?: (d: Decision) => void } = {}): BacktestResult {
   const { entry, bias } = MODE_TF[cfg.mode];
   const eMs = TF_MS[entry];
   const prep: Record<string, Prepared> = {};
@@ -40,8 +40,9 @@ export function runBacktest(data15m: Record<string, Candle[]>, cfg: BotConfig, s
   for (const s of cfg.coins) {
     const c = data15m[s];
     if (!c?.length) continue;
-    const e = aggregate(c, TF_MS['15m'], eMs);
-    const b = aggregate(c, TF_MS['15m'], TF_MS[bias as TF]);
+    const baseMs = opts.baseMs ?? TF_MS['15m'];
+    const e = aggregate(c, baseMs, eMs);
+    const b = aggregate(c, baseMs, TF_MS[bias as TF]);
     prep[s] = prepare(s, e, b, cfg);
     idx[s] = new Map(e.map((x, i) => [x.t, i]));
   }

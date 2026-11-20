@@ -51,6 +51,21 @@ export function rsi(closes: number[], period = 14): number[] {
   return out;
 }
 
+/** Bollinger Bands (SMA ± mult × standar deviasi populasi). */
+export function bollinger(closes: number[], period = 20, mult = 2) {
+  const mid = sma(closes, period);
+  const up = new Array<number>(closes.length).fill(NaN);
+  const lo = new Array<number>(closes.length).fill(NaN);
+  for (let i = period - 1; i < closes.length; i++) {
+    let s = 0;
+    for (let j = i - period + 1; j <= i; j++) s += (closes[j] - mid[i]) ** 2;
+    const sd = Math.sqrt(s / period);
+    up[i] = mid[i] + mult * sd;
+    lo[i] = mid[i] - mult * sd;
+  }
+  return { mid, up, lo };
+}
+
 /** ATR Wilder. */
 export function atr(c: Candle[], period = 14): number[] {
   const out = new Array<number>(c.length).fill(NaN);

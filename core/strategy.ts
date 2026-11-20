@@ -1,14 +1,14 @@
 // Aturan sinyal: bias tren di TF besar (EMA50/200) + pemicu di TF entry (pullback ke EMA20 atau breakout + volume).
 // Semua dinilai di candle yang SUDAH close. Entry dieksekusi di harga berikutnya (open candle setelahnya / harga live).
 import { MODE_TF, type BotConfig } from './config.js';
-import { atr, ema, rsi, sma } from './indicators.js';
+import { atr, bollinger, ema, rsi, sma } from './indicators.js';
 import { TF_MS, type Candle, type Dir, type SetupKind, type TF } from './types.js';
 
 export type Prepared = {
   symbol: string;
   entryTf: TF;
   biasTf: TF;
-  e: { c: Candle[]; emaF: number[]; emaS: number[]; rsi: number[]; atr: number[]; volAvg: number[] };
+  e: { c: Candle[]; emaF: number[]; emaS: number[]; rsi: number[]; atr: number[]; volAvg: number[]; bb: { mid: number[]; up: number[]; lo: number[] } };
   b: { c: Candle[]; emaF: number[]; emaS: number[] };
   biasIdx: Int32Array; // index candle bias terakhir yang sudah close saat candle entry i close
 };
@@ -30,7 +30,7 @@ export function prepare(symbol: string, entry: Candle[], bias: Candle[], cfg: Bo
     symbol,
     entryTf,
     biasTf,
-    e: { c: entry, emaF: ema(ec, cfg.emaFast), emaS: ema(ec, cfg.emaSlow), rsi: rsi(ec), atr: atr(entry, cfg.atrPeriod), volAvg: sma(entry.map((x) => x.v), 20) },
+    e: { c: entry, emaF: ema(ec, cfg.emaFast), emaS: ema(ec, cfg.emaSlow), rsi: rsi(ec), atr: atr(entry, cfg.atrPeriod), volAvg: sma(entry.map((x) => x.v), 20), bb: bollinger(ec, cfg.bbPeriod, cfg.bbMult) },
     b: { c: bias, emaF: ema(bc, cfg.biasFast), emaS: ema(bc, cfg.biasSlow) },
     biasIdx,
   };
@@ -102,6 +102,7 @@ function breakoutFail(p: Prepared, i: number, dir: Dir, cfg: BotConfig): string 
 }
 
 export function evaluate(p: Prepared, i: number, cfg: BotConfig): Evaluation {
+  if (cfg.strategy === 'bbBounce') return evaluateBb(p, i, cfg);
   const x = p.e.c[i];
   const t = x.t + TF_MS[p.entryTf];
   const a = p.e.atr[i];
@@ -122,4 +123,25 @@ export function evaluate(p: Prepared, i: number, cfg: BotConfig): Evaluation {
     why.push(`breakout: ${f}`);
   }
   return { ...base, bias, dir: null, reason: `bias ${bias} · ${why.join(' · ') || 'semua setup dimatikan'}` };
+}
+
+/**
+ * Scalping pantulan Bollinger: candle ini / sebelumnya menyentuh band bawah (atas), lalu candle ini menutup
+ * kembali di dalam band dan searah pantulan (hijau untuk LONG, merah untuk SHORT).
+ */
+function evaluateBb(p: Prepared, i: number, cfg: BotConfig): Evaluation {
+  const { c, bb, atr: a } = p.e;
+  const x = c[i];
+  const t = x.t + TF_MS[p.entryTf];
+  const base = { t, close: x.c, atr: a[i] };
+  if (i < cfg.bbPeriod + 1 || Number.isNaN(bb.lo[i - 1])) return { ...base, bias: null, dir: null, reason: 'data indikator belum cukup' };
+  const bias = biasAt(p, i);
+  const touchLo = x.l <= bb.lo[i] || c[i - 1].l <= bb.lo[i - 1];
+  const touchUp = x.h >= bb.up[i] || c[i - 1].h >= bb.up[i - 1];
+  const longOk = touchLo && x.c > bb.lo[i] && x.c > x.o;
+  const shortOk = touchUp && x.c < bb.up[i] && x.c < x.o;
+  if (longOk === shortOk) return { ...base, bias, dir: null, reason: touchLo || touchUp ? 'menyentuh band tapi belum ada candle pantulan' : 'harga belum menyentuh band Bollinger' };
+  const dir: Dir = longOk ? 'LONG' : 'SHORT';
+  if (cfg.bbTrendFilter && bias !== dir) return { ...base, bias, dir: null, reason: `pantulan ${dir} tapi bias ${p.biasTf} ${bias ?? 'netral'}` };
+  return { ...base, bias, dir, setup: 'bbBounce', reason: `pantulan dari band ${dir === 'LONG' ? 'bawah' : 'atas'} Bollinger` };
 }

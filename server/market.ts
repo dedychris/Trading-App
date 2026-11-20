@@ -1,7 +1,7 @@
 // Data pasar live dari Binance USDⓈ-M Futures (endpoint publik). Bot jalan di Vercel region Tokyo karena Binance memblokir IP Amerika.
 import type { Candle } from '../core/types.js';
 
-export type Interval = '1m' | '15m' | '1h' | '4h' | '1d';
+export type Interval = '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
 
 export interface Market {
   klines(symbol: string, interval: Interval, opts: { limit?: number; startTime?: number }): Promise<Candle[]>;

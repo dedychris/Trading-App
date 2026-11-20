@@ -1,7 +1,7 @@
 // Satu "tick" bot. Dipanggil tiap menit oleh cron (Supabase pg_cron → /api/bot?action=tick).
 // Urutan sama dengan backtest: (1) kelola posisi pakai candle 1m yang sudah close, geser trailing/time stop tiap candle TF entry close,
 // (2) kalau ada candle TF entry baru close → nilai sinyal semua koin → buka posisi di harga live.
-import { MODE_TF, withDefaults, type BotConfig } from '../core/config.js';
+import { MODE_TF, MODES, withDefaults, type BotConfig } from '../core/config.js';
 import { checkExits, closeManual, newAccount, onBarClose, stats, tryEnter, type Account } from '../core/engine.js';
 import { biasAt, evaluate, prepare, type Prepared } from '../core/strategy.js';
 import { TF_MS, type Decision, type Trade } from '../core/types.js';
@@ -230,7 +230,10 @@ function sanitize(c: BotConfig): BotConfig {
     if (typeof v === 'number') out[k] = Number.isFinite(+(out[k] as number)) ? +(out[k] as number) : v;
     if (typeof v === 'boolean') out[k] = !!out[k];
   }
-  if (!['intraday', 'swing', 'position'].includes(out.mode as string)) out.mode = d.mode;
+  if (!MODES.includes(out.mode as never)) out.mode = d.mode;
+  if (!['trend', 'bbBounce'].includes(out.strategy as string)) out.strategy = d.strategy;
+  if (!['atr', 'pct'].includes(out.stopMode as string)) out.stopMode = d.stopMode;
+  delete out.tpFirstIfAmbiguous;
   out.coins = Array.isArray(out.coins) ? (out.coins as string[]).map((x) => String(x).toUpperCase().replace(/[^A-Z0-9]/g, '')).filter(Boolean).map((x) => (x.endsWith('USDT') ? x : `${x}USDT`)) : d.coins;
   const cfg = out as BotConfig;
   cfg.riskPct = Math.min(5, Math.max(0.1, cfg.riskPct));

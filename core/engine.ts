@@ -79,7 +79,7 @@ export function tryEnter(acc: Account, cfg: BotConfig, x: EntryInput): Decision 
   const same = acc.positions.filter((p) => p.dir === dir).length;
   if (same >= cfg.maxSameDir) return skip(`sudah ${same} posisi ${dir} (maks ${cfg.maxSameDir} searah)`);
   const entry = x.price * (1 + (sign(dir) * cfg.slippagePct) / 100);
-  const slDist = cfg.slAtr * ev.atr;
+  const slDist = cfg.stopMode === 'pct' ? (entry * cfg.slPct) / 100 : cfg.slAtr * ev.atr;
   const sl = entry - sign(dir) * slDist;
   if (!(sl > 0)) return skip('SL tidak valid');
   const sz = sizePosition(acc, cfg, entry, sl, minNotionalOf(symbol, x.minNotional));
@@ -98,7 +98,7 @@ export function tryEnter(acc: Account, cfg: BotConfig, x: EntryInput): Decision 
     qtyOpen: sz.qty,
     sl,
     initialSl: sl,
-    tp1: entry + sign(dir) * cfg.tp1R * slDist,
+    tp1: entry + sign(dir) * (cfg.stopMode === 'pct' ? (entry * cfg.tpPct) / 100 : cfg.tp1R * slDist),
     tp2: entry + sign(dir) * cfg.tp2R * slDist,
     tp1Hit: false,
     peak: entry,
@@ -140,7 +140,15 @@ function closePart(acc: Account, cfg: BotConfig, p: Position, qty: number, price
  */
 export function checkExits(acc: Account, cfg: BotConfig, p: Position, h: number, l: number, t: number, barMs: number): Trade | null {
   const L = p.dir === 'LONG';
-  const slHit = L ? l <= p.sl : h >= p.sl;
+  const tpTouch = !p.tp1Hit && (cfg.tp1Frac > 0 || cfg.tpLock) && (L ? h >= p.tp1 : l <= p.tp1);
+  const slHit = (L ? l <= p.sl : h >= p.sl) && !(tpTouch && cfg.tpFirstIfAmbiguous);
+  if (!slHit && tpTouch && cfg.tpLock) {
+    // TP tersentuh: kunci profit di level TP, lanjut trailing
+    p.tp1Hit = true;
+    p.sl = p.tp1;
+    p.peak = L ? Math.max(p.peak, h) : Math.min(p.peak, l);
+    return null;
+  }
   const slip = cfg.slippagePct / 100;
   if (slHit) {
     const kind: ExitKind = p.sl === p.initialSl ? 'SL' : p.tp1Hit && Math.abs(p.sl / p.entry - 1) <= cfg.beBufferPct / 100 + 1e-9 ? 'BE' : 'TRAIL';
@@ -161,7 +169,10 @@ export function checkExits(acc: Account, cfg: BotConfig, p: Position, h: number,
 /** Dipanggil tiap candle TF entry close: geser trailing stop & time stop. */
 export function onBarClose(acc: Account, cfg: BotConfig, p: Position, close: number, atrNow: number, closeT: number, barMs: number): Trade | null {
   const L = p.dir === 'LONG';
-  if ((p.tp1Hit || cfg.trailAlways) && cfg.trailAtr > 0 && atrNow > 0) {
+  if (cfg.stopMode === 'pct' && cfg.trailPct > 0 && (p.tp1Hit || cfg.trailAlways)) {
+    const trail = p.peak - (sign(p.dir) * p.entry * cfg.trailPct) / 100;
+    p.sl = L ? Math.max(p.sl, trail) : Math.min(p.sl, trail);
+  } else if ((p.tp1Hit || cfg.trailAlways) && cfg.trailAtr > 0 && atrNow > 0) {
     const trail = p.peak - sign(p.dir) * cfg.trailAtr * atrNow;
     p.sl = L ? Math.max(p.sl, trail) : Math.min(p.sl, trail);
   }

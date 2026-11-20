@@ -101,3 +101,22 @@ describe('aggregate', () => {
     expect(h).toEqual([{ t: 0, o: 0, h: 4, l: -1, c: 3.5, v: 4 }]);
   });
 });
+
+describe('scalping: SL/TP % harga + kunci TP lalu trailing', () => {
+  it('TP tersentuh → profit dikunci di TP, keluar lewat trailing', () => {
+    const c: BotConfig = { ...cfg, stopMode: 'pct', slPct: 0.24, tpPct: 0.4, trailPct: 0.16, tpLock: true, tp1Frac: 0, tp2R: 0, trailAtr: 0 };
+    const acc = newAccount(1000);
+    const p = open(acc, 'LONG', 100, 1, c);
+    expect(p.sl).toBeCloseTo(99.76);
+    expect(p.tp1).toBeCloseTo(100.4);
+    expect(checkExits(acc, c, p, 100.45, 99.9, 1000, BAR)).toBeNull();
+    expect(p.tp1Hit).toBe(true);
+    expect(p.sl).toBeCloseTo(100.4);
+    expect(checkExits(acc, c, p, 100.8, 100.5, 2000, BAR)).toBeNull();
+    onBarClose(acc, c, p, 100.7, 1, 2 * BAR, BAR);
+    expect(p.sl).toBeCloseTo(100.64);
+    const tr = checkExits(acc, c, p, 100.7, 100.6, 3000, BAR)!;
+    expect(tr.exitKind).toBe('TRAIL');
+    expect(tr.pnl).toBeGreaterThan(0);
+  });
+});

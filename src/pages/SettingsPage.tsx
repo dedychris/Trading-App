@@ -4,8 +4,8 @@ import { api, getKey, setKey } from '../api';
 import type { Ctx } from '../App';
 import { idr } from '../fmt';
 
-type NumKey = { [K in keyof BotConfig]: BotConfig[K] extends number ? K : never }[keyof BotConfig];
-type BoolKey = { [K in keyof BotConfig]: BotConfig[K] extends boolean ? K : never }[keyof BotConfig];
+type NumKey = { [K in keyof BotConfig]-?: BotConfig[K] extends number ? K : never }[keyof BotConfig];
+type BoolKey = { [K in keyof BotConfig]-?: BotConfig[K] extends boolean ? K : never }[keyof BotConfig];
 type Field = { k: NumKey; label: string; hint?: string; step?: number; pct?: boolean } | { k: BoolKey; label: string; hint?: string; bool: true };
 
 const GROUPS: { title: string; fields: Field[] }[] = [

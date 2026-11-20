@@ -1,8 +1,8 @@
 export type Candle = { t: number; o: number; h: number; l: number; c: number; v: number }; // t = waktu buka (ms)
 export type Dir = 'LONG' | 'SHORT';
-export type TF = '15m' | '1h' | '4h' | '1d';
-export const TF_MS: Record<TF, number> = { '15m': 900_000, '1h': 3_600_000, '4h': 14_400_000, '1d': 86_400_000 };
-export type SetupKind = 'pullback' | 'breakout';
+export type TF = '5m' | '15m' | '1h' | '4h' | '1d';
+export const TF_MS: Record<TF, number> = { '5m': 300_000, '15m': 900_000, '1h': 3_600_000, '4h': 14_400_000, '1d': 86_400_000 };
+export type SetupKind = 'pullback' | 'breakout' | 'bbBounce';
 
 export type ExitKind = 'SL' | 'TP1' | 'TP2' | 'BE' | 'TRAIL' | 'TIME' | 'MANUAL';
 

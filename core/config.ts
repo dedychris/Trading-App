@@ -1,12 +1,15 @@
 // Semua variabel strategi di satu tempat. Bot, backtest, dan dashboard memakai tipe yang sama.
 import type { TF } from './types.js';
 
-export type Mode = 'intraday' | 'swing' | 'position';
+export type Mode = 'intraday' | 'swing' | 'position' | 'scalp5' | 'scalp15';
 export const MODE_TF: Record<Mode, { entry: TF; bias: TF }> = {
   intraday: { entry: '15m', bias: '1h' },
   swing: { entry: '1h', bias: '4h' },
   position: { entry: '4h', bias: '1d' },
+  scalp5: { entry: '5m', bias: '1h' },
+  scalp15: { entry: '15m', bias: '1h' },
 };
+export const MODES = Object.keys(MODE_TF) as Mode[];
 
 export type BotConfig = {
   // A. Koin
@@ -16,6 +19,7 @@ export type BotConfig = {
   biasFast: number; // EMA cepat TF bias
   biasSlow: number; // EMA lambat TF bias
   btcFilter: boolean; // altcoin tidak boleh melawan bias BTC
+  strategy: 'trend' | 'bbBounce'; // trend = pullback/breakout searah bias; bbBounce = pantulan Bollinger (scalping)
   // C. Pemicu entry di TF entry
   pullback: boolean;
   breakout: boolean;
@@ -26,9 +30,17 @@ export type BotConfig = {
   breakoutLookback: number; // tembus high/low N candle
   volMult: number; // volume candle breakout ≥ volMult × rata-rata 20
   maxExtensionAtr: number; // breakout: jarak close dari EMA20 maks N × ATR (hindari kejar harga)
+  bbPeriod: number;
+  bbMult: number;
+  bbTrendFilter: boolean; // pantulan hanya searah bias TF besar
   // D. Stop loss
   atrPeriod: number;
   slAtr: number; // SL = slAtr × ATR
+  stopMode: 'atr' | 'pct'; // pct = SL/TP/trailing dalam % harga tetap (slPct, tpPct, trailPct)
+  slPct: number;
+  tpPct: number;
+  trailPct: number;
+  tpLock: boolean; // TP tersentuh → posisi tidak ditutup, profit TP dikunci (SL = TP) lalu trailing
   // E. Ukuran posisi
   riskPct: number; // % saldo yang dirisikokan per trade (1R)
   maxLeverage: number;
@@ -51,6 +63,8 @@ export type BotConfig = {
   takerFee: number;
   makerFee: number;
   slippagePct: number;
+  // khusus backtest: kalau SL & TP tersentuh di candle yang sama, anggap TP duluan (batas atas optimis)
+  tpFirstIfAmbiguous?: boolean;
 };
 
 export const DEFAULT_COINS = ['BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'DOGE', 'ADA', 'TRX', 'LINK', 'AVAX', 'SUI', 'TON', 'DOT', 'LTC', 'BCH', 'XLM', 'HBAR', 'NEAR', 'UNI', 'APT'].map((c) => `${c}USDT`);
@@ -63,6 +77,7 @@ export const DEFAULT_CONFIG: BotConfig = {
   biasFast: 20,
   biasSlow: 50,
   btcFilter: true,
+  strategy: 'trend',
   pullback: true,
   breakout: true,
   emaFast: 20,
@@ -72,8 +87,16 @@ export const DEFAULT_CONFIG: BotConfig = {
   breakoutLookback: 20,
   volMult: 1.5,
   maxExtensionAtr: 2.5,
+  bbPeriod: 20,
+  bbMult: 2,
+  bbTrendFilter: false,
   atrPeriod: 14,
   slAtr: 2,
+  stopMode: 'atr',
+  slPct: 0.24,
+  tpPct: 0.4,
+  trailPct: 0.16,
+  tpLock: false,
   riskPct: 1,
   maxLeverage: 25,
   maxMarginPct: 30,
