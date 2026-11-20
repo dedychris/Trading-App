@@ -1,6 +1,6 @@
 // Service worker sederhana: app bisa di-install & shell-nya tetap kebuka saat sinyal jelek.
 // Data Binance (/api) TIDAK pernah di-cache — selalu live.
-const CACHE = 'msp-v1';
+const CACHE = 'tb-v2';
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (e) => {
@@ -28,5 +28,5 @@ self.addEventListener('fetch', (e) => {
 });
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
-  e.waitUntil(self.clients.matchAll({ type: 'window' }).then((cs) => (cs[0] ? cs[0].focus() : self.clients.openWindow('/#pos'))));
+  e.waitUntil(self.clients.matchAll({ type: 'window' }).then((cs) => (cs[0] ? cs[0].focus() : self.clients.openWindow('/#home'))));
 });

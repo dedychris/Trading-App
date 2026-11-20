@@ -1,70 +1,69 @@
-# Momentum Scanner Pro
+# Trading Bot (paper trading)
 
-Paper trading semi-otomatis untuk **Binance Futures USDⓈ-M**: data **100% live dari Binance**, uang virtual dengan **saldo awal bebas** (misal Rp 150.000), winrate dari **backtest data historis asli**. Bisa dibuka di HP (install sebagai app/PWA) dan laptop, data sinkron lewat Supabase.
+Bot paper trading **Binance USDⓈ-M Futures** yang jalan **24 jam di server**: Vercel Function region Tokyo, dipanggil tiap menit oleh cron Supabase. HP atau laptop cuma buat dashboard: lihat saldo, posisi, alasan tiap keputusan, riwayat, backtest, dan ubah setting.
 
-> Ini simulasi buat belajar & menguji strategi. Winrate = statistik histori, bukan jaminan profit.
+> Simulasi uang virtual buat menguji strategi. **Backtest 2 tahun belum menunjukkan edge yang kuat** (lihat tab Backtest), jadi ini bukan jaminan profit.
 
-## Fitur
-- **Scanner**: tombol Scan Now, **20 koin market cap besar** (list tetap `CORE_COINS` di `src/lib/binance.ts`: BTC, ETH, BNB, SOL, XRP, DOGE, ADA, TRX, LINK, AVAX, SUI, TON, DOT, LTC, BCH, XLM, HBAR, NEAR, UNI, APT) **+ 5 koin volume tertinggi** Binance di luar list itu (stablecoin dibuang, ditandai 🔥 top vol). Analisa 15M/1H/4H (EMA9/21, RSI14, MACD, ADX14 Wilder). Grup:
-  - ⭐ **Golden**: 4H + 1H + 15M qualify penuh semua, arah sama.
-  - **3TF searah**, **4H+1H searah**, **1H+15M searah**, **4H+15M searah**: arah tren (EMA9/21) sama di TF itu, minimal satu TF qualify penuh. Chip TF: ✓ qualify penuh · ~ searah · ✗ berlawanan.
-  - Tiap kartu langsung menampilkan **Entry (harga live), TP, SL** di leverage yang dipilih lewat input leverage cepat di atas daftar.
-  - RSI LONG 40–65, SHORT 35–60. Sinyal dihitung dari candle yang sudah close.
-- **Konteks BTC**: peringatan ⚠️ kalau LONG altcoin saat BTC bearish (dan sebaliknya).
-- **Winrate (opsi C + D)**: per koin kalau ≥ 20 kejadian, kalau kurang ditarik ke rata-rata gabungan semua koin. Dihitung ulang tiap ganti leverage. TP & SL di candle yang sama = kalah. Ditambah winrate trade lu sendiri.
-- **Filter tambahan (on/off)**: Volume Ratio, EMA200, ATR, Bollinger Bands, Funding/OI/Long-Short. Ada perbandingan winrate dengan vs tanpa tiap filter.
-- **Form order**: LONG/SHORT, Market/Limit, leverage 1–125× bebas, margin nominal tetap atau % saldo. Preview: harga TP (+14%)/SL (−7%) dari margin, jarak %, likuidasi (perkiraan), fee, PnL bersih, winrate minimal biar impas.
-- **Simulasi realistis**: fee Binance (taker 0,05%, maker 0,02%, diskon BNB −10% on/off), funding fee pakai rate asli Binance, TP/SL/likuidasi dicek pakai harga live + candle 1 menit saat app dibuka lagi.
-- **Posisi** (PnL live, tutup manual, boleh dobel posisi di koin yang sama) + **Order Pending**.
-- **TP/SL bisa diatur** (% dari margin): default di Pengaturan, bisa diubah per order. Winrate dihitung ulang sesuai TP/SL.
-- **Trailing TP**: nyentuh TP → posisi tidak ditutup, profit TP dikunci, batas keluar = maks(TP, profit tertinggi − jarak trailing). Form order menampilkan rata-rata hasil backtest TP tetap vs trailing.
-- **🤖 Auto trading (simulasi)**: aktif dari awal, langsung scan saat app dibuka lalu tiap candle 15m close, buka posisi untuk sinyal ⭐ Golden / 3TF searah / 1H+15M searah / 4H+1H (bisa dimatikan) yang baru muncul. Syarat: tidak melawan BTC, koin belum kena SL 3× hari ini, harga belum lari > 50% jarak SL dari harga sinyal (entry telat, mis. saat app baru dibuka), lolos filter aktif. Syarat winrate ≥ impas bisa dinyalakan (default mati). Setting terpisah (leverage, margin, TP/SL, trailing), maks posisi, 1 posisi per koin, stop rugi harian −15% yang ikut menghitung posisi terbuka kalau semuanya kena SL (reset 00:00 WIB), log alasan entry/lewati. Layar dijaga tetap nyala (Wake Lock) selama auto aktif. Jalan selama app terbuka.
-- **Riwayat + Audit**: snapshot indikator saat entry & exit, analisa kenapa menang/kalah. Export CSV (termasuk RSI/ADX/ATR 15m·1H·4H saat entry, SL vs ATR, harga & jam sinyal, telat berapa menit dan selisih harga entry dari sinyal).
-- **Belajar dari pola**: tiap trade menyimpan pola kondisi saat entry (setup, arah, BTC, ADX, RSI, volume, SL vs ATR, leverage). Kalau sinyal baru mirip pola yang ≥ 3 kali sering kena SL, muncul peringatan ⚠️; kalau mirip pola yang sering kena TP, ditandai ✅. Hanya peringatan, tidak memblokir order.
-- **Statistik**: grafik saldo, winrate asli, rata-rata profit/rugi, profit factor, drawdown, total fee & funding, pola dari trade lu.
-- **Saldo awal bebas + sesi**: Pengaturan → Akun paper trading → *Mulai sesi baru*. Isi dalam Rupiah (dikonversi pakai kurs live USDT/IDR Indodax, bisa diubah manual) atau USDT. Hitungan tetap USDT; saldo, margin & PnL juga tampil dalam Rupiah (kurs dikunci selama sesi).
-- **Arsip sesi lama**: mulai sesi baru **tidak menghapus** riwayat. Posisi terbuka ditutup di harga live, order pending dibatalkan, trade selesai disimpan di arsip (Riwayat → pilih sesi, bisa export CSV). Arsip tetap dipakai untuk peringatan pola ⚠️/✅, insight, dan "Trade lu" di form order. Statistik & grafik saldo hanya sesi sekarang.
-- **Compounding**: margin dihitung dari saldo sekarang, jadi cuan langsung ikut jadi modal. Auto & manual default 10% saldo. Mode *Bagi rata* (saldo ÷ maks posisi) masih ada tapi berisiko: posisi searah jadi satu taruhan besar.
-- **Minimal order Binance**: nilai posisi (margin × leverage) harus ≥ MIN_NOTIONAL & qty minimal dari exchangeInfo (umumnya 5 USDT, BTC/ETH lebih besar). Order di bawahnya ditolak, auto melewati dengan alasan.
-- **Pengaturan**: mode terang/gelap, alert suara & notifikasi, saldo awal & sesi baru.
+## Kenapa dibuat ulang (pelajaran dari app lama)
+1. **Auto cuma jalan selama app kebuka di layar.** Layar HP mati = browser membekukan app = bot berhenti. Sekarang bot jalan di server.
+2. **TP/SL dari % margin** (SL 0,7% harga di 10×) itu lebih kecil dari goyangan normal candle 15m. Sekarang SL dari **ATR** (ikut volatilitas koin), dan ukuran posisi dari **risiko % saldo**. Leverage cuma hasil hitungan.
+3. **Strategi intraday 15m nggak punya edge.** Di backtest 2 tahun hasilnya −0,14R/trade, bahkan tanpa fee pun minus. Sekarang default-nya entry 4H + bias harian.
+4. **Nggak ketahuan kenapa nggak entry.** Sekarang tiap koin di tiap candle punya alasan: BUKA / LEWAT (+ rem mana yang nahan) / TUNGGU (+ syarat mana yang belum terpenuhi).
 
-## Jalankan di laptop
-```bash
-npm install
-npm run dev
-```
-Buka http://localhost:5173. Dev server sudah termasuk proxy Binance (`/api/binance`).
+## Cara kerja
+Tiap menit cron memanggil `/api/bot?action=tick`:
+1. **Kelola posisi**: cek SL / TP1 / trailing pakai candle 1 menit yang sudah close (kalau SL & TP kena di menit yang sama, dianggap SL).
+2. **Tiap candle 4H close** (00, 04, 08, … UTC = 07, 11, 15, … WIB), semua koin dinilai, lalu yang lolos dibuka di harga live.
+3. State disimpan di Supabase (`bot_kv`). Dashboard membaca lewat `/api/bot?action=state`.
 
-Test: `npm test` (unit test indikator, TP/SL, backtest, sinkron).
+Mesin yang dipakai bot live (`core/`) sama persis dengan yang dipakai backtest. Ada tes replay yang memutar bot live di data historis, dan hasilnya sejalan dengan backtest.
 
-## Deploy gratis ke Vercel
-1. Jadikan repo **private**: GitHub → repo → Settings → Danger Zone → Change visibility → Private.
-2. Daftar di https://vercel.com pakai akun GitHub → **Add New → Project** → pilih repo `trading-app` → **Deploy** (setting default, Vite terdeteksi otomatis).
-3. Proxy Binance (`api/binance.ts`) otomatis jalan di region **Tokyo** (`vercel.json`), karena Binance memblokir server Amerika.
-4. Buka link Vercel di HP → Chrome menu ⋮ → **Install app**.
+## Variabel strategi (default)
+| Grup | Variabel | Default |
+|---|---|---|
+| A. Koin | 20 koin market cap besar | BTC, ETH, BNB, SOL, XRP, DOGE, ADA, TRX, LINK, AVAX, SUI, TON, DOT, LTC, BCH, XLM, HBAR, NEAR, UNI, APT |
+| B. Bias tren | TF harian: close > EMA20 > EMA50 = LONG, kebalikannya SHORT, selain itu netral (tidak trade). Altcoin tidak melawan bias BTC | |
+| C. Pemicu (TF 4H) | **Pullback**: EMA20 searah EMA50, harga sempat menyentuh EMA20 dalam 3 candle, lalu candle konfirmasi menutup melewati high/low candle sebelumnya, RSI 45–70 (SHORT 30–55). **Breakout**: close tembus high/low 20 candle, volume ≥ 1,5× rata-rata, close kuat, maks 2,5 ATR dari EMA20 | |
+| D. Stop loss | 2 × ATR(14) 4H | |
+| E. Ukuran posisi | Risiko **1% saldo** per trade (sudah termasuk fee). Leverage dihitung sendiri (maks 20×), margin maks 30% saldo. Kalau di bawah minimal order Binance, dinaikkan ke minimal selama risikonya ≤ 3% saldo | |
+| F. Keluar | TP1 di 1R: tutup 50%, SL ke impas. Sisanya trailing 3 × ATR, tanpa TP2 (profit dibiarkan lari) | |
+| G. Rem risiko | Maks 3 posisi, maks 2 searah, satu posisi per koin, stop entry hari itu kalau rugi ≤ −3R, jeda 8 candle setelah SL | |
+| Biaya | Taker 0,05%, maker 0,02% (TP), slippage 0,02% | |
 
-## Aktifkan sinkron HP ↔ laptop (Supabase + login Google)
-1. **Supabase**: buat project gratis di https://supabase.com. Buka **SQL Editor**, paste isi `supabase/schema.sql`, Run.
-2. **Google Cloud Console** (https://console.cloud.google.com): buat project → **APIs & Services → OAuth consent screen** (External, isi nama app & email) → **Credentials → Create Credentials → OAuth client ID** (Web application). Di *Authorized redirect URIs* isi: `https://<project-ref>.supabase.co/auth/v1/callback`.
-3. Supabase → **Authentication → Providers → Google** → aktifkan, paste Client ID & Client Secret.
-4. Supabase → **Authentication → URL Configuration** → *Site URL* = link Vercel lu, tambahkan juga di *Redirect URLs* (plus `http://localhost:5173` untuk lokal).
-5. Supabase → **Project Settings → API**: salin *Project URL* dan *anon public key*. Masukkan di Vercel → Project → **Settings → Environment Variables**:
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
+Semua bisa diubah di tab **Setting** (butuh kunci bot).
+
+## Deploy (sekali saja)
+1. **Supabase**: project yang sudah ada boleh. SQL Editor → paste `supabase/schema.sql` → ganti `NAMA-APP` dan `ISI_BOT_SECRET` → Run.
+2. **Vercel** → Project → Settings → **Environment Variables**:
+   - `SUPABASE_URL`: Supabase → Project Settings → API → Project URL
+   - `SUPABASE_SERVICE_ROLE_KEY`: di halaman yang sama, *service_role* key (**rahasia**, jangan taruh di kode atau env yang diawali `VITE_`)
+   - `BOT_SECRET`: password bebas buatan lu, sama dengan yang ditulis di SQL cron
    
    Lalu **Redeploy**.
-6. Di app: Pengaturan → **Login dengan Google** (di HP dan laptop pakai akun yang sama).
+3. Buka app → tab **Setting** → isi kunci bot (= `BOT_SECRET`). Dalam 1–2 menit status di atas harusnya jadi **● Aktif**. Saldo awal otomatis Rp 150.000, bisa diganti lewat *Mulai sesi baru*.
 
-Catatan: project Supabase gratis di-pause kalau 7 hari tidak dipakai sama sekali; bisa dihidupkan lagi dari dashboard.
+Cek cron dari Supabase SQL: `select status_code, left(content,200), created from net._http_response order by created desc limit 10;`
+
+## Lokal
+```bash
+npm install
+npm run dev            # dashboard + bot lokal (state di .bot-state.json, kunci bot: "lokal")
+npm test               # unit test mesin & bot
+```
+Backtest dengan data asli:
+```bash
+scripts/download-data.sh data                         # 12 bulan terakhir, 20 koin, candle 15m
+npx tsx scripts/backtest.ts data --out public/backtest.json
+npx tsx scripts/replay.ts data 2026-07-01 2026-10-31  # putar bot live di data historis → .bot-state.json untuk dashboard lokal
+DATA_DIR=data npm test                                # + tes replay
+```
 
 ## Struktur
 ```
-api/binance.ts          Vercel function (proxy Binance, region Tokyo)
-src/lib/indicators.ts   EMA, RSI, MACD, ADX, ATR, Bollinger (rumus standar)
-src/lib/signals.ts      aturan sinyal, grup setup, filter
-src/lib/backtest.ts     mesin winrate dari data historis
-src/lib/sim.ts          TP/SL, fee, likuidasi, preview order
-src/store/              state, mesin simulasi, sinkron Supabase
-src/components/         halaman UI
-supabase/schema.sql     tabel + Row Level Security
+core/        strategi, mesin akun & exit, backtest (dipakai bersama bot, backtest, dashboard)
+server/      tick bot, data Binance, penyimpanan Supabase, HTTP handler
+api/bot.ts   Vercel Function bot · api/binance.ts proxy harga untuk dashboard
+src/         dashboard (React)
+scripts/     download data, backtest, replay
+supabase/    tabel + cron
 ```

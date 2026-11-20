@@ -1,6 +1,6 @@
 {
   "regions": ["hnd1"],
-  "functions": { "api/binance.ts": { "maxDuration": 15 } },
+  "functions": { "api/binance.ts": { "maxDuration": 15 }, "api/bot.ts": { "maxDuration": 60 } },
   "headers": [
     { "source": "/sw.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
   ]

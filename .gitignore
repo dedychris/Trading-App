@@ -5,3 +5,4 @@ dist
 .vercel
 test-results
 *.log
+.bot-state.json

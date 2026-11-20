@@ -1,7 +1,7 @@
 {
-  "name": "Momentum Scanner Pro",
-  "short_name": "MS Pro",
-  "description": "Paper trading semi-otomatis Binance Futures",
+  "name": "Trading Bot",
+  "short_name": "Trading Bot",
+  "description": "Bot paper trading Binance Futures 24 jam",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#080b0a",
