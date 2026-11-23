@@ -80,7 +80,7 @@ Kesimpulan: lolos di periode 3, tapi gagal di dua periode lain begitu dipakai se
 | 2 Momentum 7 hari | +3,8% | −7,9% | +26,8% | +21% |
 | 2 Momentum 14 hari | −16,2% | +4,8% | +10,4% | −3% |
 | 2 Momentum 30 hari | +4,3% | −10,0% | +19,2% | +12% |
-| Long semua koin terus (ukuran sama dgn #2) | +12,2% | −24,2% | +9,1% | −6% |
+| Long semua koin terus (ukuran sama dgn #2) | +12,2% | −24,2% | +9,1% | −7% |
 | Buy & hold BTC | +16,4% | −30,4% | +1,6% | −18% |
 
 Kesimpulan:
