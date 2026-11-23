@@ -46,3 +46,19 @@ Kesimpulan:
 - Filter tren 1H+4H tidak menolong: auto 15m tetap hancur, swing 4H malah jadi lebih jelek di periode 2.
 - Semua strategi 15m rugi besar di kedua periode. Hanya swing 4H (tanpa filter tambahan) yang konsisten di sekitar impas
   (−1,4% dan +2,1%, drawdown 16–18%), tapi itu artinya belum ada keuntungan nyata.
+
+## Uji "skip kalau BTC netral" (periode 3: Mei–Okt 2025)
+
+`BT_PERIOD=3` (data: `MONTHS="2025-03 2025-04 2025-05 2025-06 2025-07 2025-08" bash scripts/backtest/download.sh`).
+Aturan dikunci sebelum melihat periode 3: Swing 4H (SL 1,5×ATR4h, TP 3R) + tidak entry kalau BTC 1H & 4H tidak searah.
+
+| Strategi | Mei–Okt 2025 | Nov 2025–Apr 2026 | Mei–Okt 2026 | Total 18 bulan |
+|---|---:|---:|---:|---:|
+| Swing 4H TP 3R | −9,6% | +2,1% | −1,4% | −9% |
+| Swing 4H TP 3R + skip BTC netral | **+8,1%** | −9,6% | −19,2% | −21% |
+| Swing 1H 2×ATR TP 2R + skip BTC netral | +15,1% | −32,8% | +13,1% | −12% |
+| Auto sekarang | −85,3% | −98,1% | −89,5% | ≈ −100% |
+| Auto sekarang + skip BTC netral | −61,6% | −94,0% | −76,8% | ≈ −100% |
+
+Kesimpulan: lolos di periode 3, tapi gagal di dua periode lain begitu dipakai sebagai aturan sungguhan
+(slot yang kosong terisi trade lain yang lebih jelek). Tidak ada strategi yang untung konsisten selama 18 bulan.

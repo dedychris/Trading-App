@@ -12,10 +12,11 @@ import type { Candle } from '../../src/lib/binance';
 
 const DIR = process.env.BT_DIR ?? new URL('.', import.meta.url).pathname.replace(/\/$/, '');
 const COINS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'TRXUSDT', 'LINKUSDT', 'AVAXUSDT', 'SUIUSDT', 'TONUSDT', 'DOTUSDT', 'LTCUSDT', 'BCHUSDT', 'XLMUSDT', 'HBARUSDT', 'NEARUSDT', 'UNIUSDT', 'APTUSDT'];
-// BT_PERIOD=1 (default): Mei–Okt 2026 · BT_PERIOD=2: Nov 2025–Apr 2026 (periode uji ulang)
+// BT_PERIOD=1 (default): Mei–Okt 2026 · 2: Nov 2025–Apr 2026 · 3: Mei–Okt 2025
 const PERIODS: Record<string, string[]> = {
   '1': ['2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10'],
   '2': ['2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04'],
+  '3': ['2025-03', '2025-04', '2025-05', '2025-06', '2025-07', '2025-08', '2025-09', '2025-10'],
 };
 const ALL_MONTHS = PERIODS[process.env.BT_PERIOD ?? '1'];
 const TRADE_MONTHS = ALL_MONTHS.slice(2); // 2 bulan pertama = pemanasan indikator
@@ -163,7 +164,7 @@ const feeOf = (tr: Trade) => FEE_IN + (tr.reason === 'TP' ? FEE_TP : FEE_SL) * (
 const netRet = (tr: Trade) => gross(tr) - feeOf(tr);
 
 // ---------------- portfolio ----------------
-type Cfg = { riskPct: number; maxOpen: number; dailyLossPct: number; maxSlPerCoinDay: number; btcFilter: boolean };
+type Cfg = { riskPct: number; maxOpen: number; dailyLossPct: number; maxSlPerCoinDay: number; btcFilter: boolean; skipBtcNeutral?: boolean };
 const DEF: Cfg = { riskPct: 0.7, maxOpen: 3, dailyLossPct: 15, maxSlPerCoinDay: 3, btcFilter: true };
 
 type Done = Trade & { notional: number; pnl: number; balAfter: number };
@@ -197,6 +198,7 @@ function portfolio(plans: Plan[], cfg = DEF) {
     const dk = dayKey(pl.t);
     if ((slCount.get(`${pl.sym}|${dk}`) ?? 0) >= cfg.maxSlPerCoinDay) { skipped++; continue; }
     if (cfg.btcFilter && pl.sym !== 'BTCUSDT' && btcConflict(btcTrendAt(pl.t), pl.dir)) { skipped++; continue; }
+    if (cfg.skipBtcNeutral && btcTrendAt(pl.t) === 'NETRAL') { skipped++; continue; }
     const tr = runTrade(pl);
     if (!tr || tr.slMove <= 0) continue;
     const notional = (bal * cfg.riskPct) / 100 / tr.slMove;
@@ -476,6 +478,14 @@ FEE_IN = 0.0002; FEE_TP = 0.0002; FEE_SL = 0.0005;
 show('T-C2m Swing 4H + tren 1H+4H, fee maker', T(planATR('S4H', 1.5, 3)));
 show('T-G7m G7 fee maker', planScalp({ rr: 50, trendExit: '1h', volMin: 1.5 }));
 FEE_IN = FEE; FEE_TP = FEE; FEE_SL = FEE;
+
+console.log('\n=== N. Uji "skip kalau BTC netral" (aturan dikunci sebelum lihat periode 3) ===');
+const NEU = { ...DEF, skipBtcNeutral: true };
+show('N-C2  Swing 4H SL 1,5×ATR TP 3R (pembanding)', planATR('S4H', 1.5, 3));
+show('N-C2x Swing 4H SL 1,5×ATR TP 3R + skip BTC netral  ← UJI UTAMA', planATR('S4H', 1.5, 3), NEU);
+show('N-A   Auto sekarang (pembanding)', planA(['GOLD', '3TF', '15M1H', '1H4H']));
+show('N-Ax  Auto sekarang + skip BTC netral', planA(['GOLD', '3TF', '15M1H', '1H4H']), NEU);
+show('N-B3x Swing 1H SL 2×ATR TP 2R + skip BTC netral', planATR('1H4H', 2, 2), NEU);
 
 void rA;
 writeFileSync(`${DIR}/data/results-p${process.env.BT_PERIOD ?? '1'}.json`, JSON.stringify({ results, extra }, null, 1));
