@@ -12,10 +12,19 @@ import type { Candle } from '../../src/lib/binance';
 
 const DIR = process.env.BT_DIR ?? new URL('.', import.meta.url).pathname.replace(/\/$/, '');
 const COINS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'TRXUSDT', 'LINKUSDT', 'AVAXUSDT', 'SUIUSDT', 'TONUSDT', 'DOTUSDT', 'LTCUSDT', 'BCHUSDT', 'XLMUSDT', 'HBARUSDT', 'NEARUSDT', 'UNIUSDT', 'APTUSDT'];
-const ALL_MONTHS = ['2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10'];
-const TRADE_MONTHS = ALL_MONTHS.slice(2);
-const START = Date.UTC(2026, 4, 1);
-const END = Date.UTC(2026, 10, 1);
+// BT_PERIOD=1 (default): Mei–Okt 2026 · BT_PERIOD=2: Nov 2025–Apr 2026 (periode uji ulang)
+const PERIODS: Record<string, string[]> = {
+  '1': ['2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10'],
+  '2': ['2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04'],
+};
+const ALL_MONTHS = PERIODS[process.env.BT_PERIOD ?? '1'];
+const TRADE_MONTHS = ALL_MONTHS.slice(2); // 2 bulan pertama = pemanasan indikator
+const monthStart = (m: string) => Date.UTC(+m.slice(0, 4), +m.slice(5, 7) - 1, 1);
+const START = monthStart(TRADE_MONTHS[0]);
+const lastM = TRADE_MONTHS.at(-1)!;
+const END = Date.UTC(+lastM.slice(0, 4), +lastM.slice(5, 7), 1); // awal bulan setelah bulan terakhir
+const DAYS = (END - START) / 86_400_000;
+console.log(`Periode ${TRADE_MONTHS[0]} s/d ${TRADE_MONTHS.at(-1)} (${DAYS} hari)`);
 const MS = { '15m': 900_000, '1h': 3_600_000, '4h': 14_400_000 } as const;
 const FEE = 0.0005; // taker Binance, entry & exit (sama seperti app)
 const WIB = 7 * 3_600_000;
@@ -222,11 +231,20 @@ function stats(name: string, r: ReturnType<typeof portfolio>) {
   }
   const reasons: Record<string, number> = {};
   for (const x of d) reasons[x.reason] = (reasons[x.reason] ?? 0) + 1;
+  // hasil per kondisi tren BTC (1H + 4H) saat entry, dalam R bersih (1R = risiko 1 trade)
+  const regime: Record<string, { n: number; R: number }> = {};
+  for (const x of d) {
+    const k = btcTrendAt(x.t);
+    regime[k] ??= { n: 0, R: 0 };
+    regime[k].n++;
+    regime[k].R += netRet(x) / x.slMove;
+  }
+  for (const k of Object.keys(regime)) regime[k].R = +regime[k].R.toFixed(1);
   const avgSl = (d.reduce((s, x) => s + x.slMove, 0) / Math.max(1, d.length)) * 100;
   return {
     name,
     trades: d.length,
-    perDay: +(d.length / 184).toFixed(2),
+    perDay: +(d.length / DAYS).toFixed(2),
     winrate: +((wins.length / Math.max(1, d.length)) * 100).toFixed(1),
     pf: +(gl ? gw / gl : 0).toFixed(2),
     pfGross: +(gL ? gW / gL : 0).toFixed(2),
@@ -240,6 +258,7 @@ function stats(name: string, r: ReturnType<typeof portfolio>) {
     byMonth: Object.fromEntries(Object.entries(byMonth).map(([k, v]) => [k, +v.toFixed(1)])),
     reasons,
     skipped: r.skipped,
+    regime,
   };
 }
 
@@ -427,7 +446,38 @@ run('H koin genap (ETH,SOL,DOGE,...)', g7.filter((p) => COINS.indexOf(p.sym) % 2
 run('H LONG saja', g7.filter((p) => p.dir === 'LONG'));
 run('H SHORT saja', g7.filter((p) => p.dir === 'SHORT'));
 
+console.log('\n=== T. Tambah filter tren 1H + 4H (arah trade harus sama dengan EMA9/21 di 1H DAN 4H) ===');
+const trendOk = (p: Plan) => {
+  const s = SS[p.sym];
+  const h1 = evalTF(s['1h']!, idxAt(s['1h']!, p.t));
+  const h4 = evalTF(s['4h']!, idxAt(s['4h']!, p.t));
+  return h1?.dir === p.dir && h4?.dir === p.dir;
+};
+const T = (pl: Plan[]) => pl.filter(trendOk);
+const show = (name: string, pl: Plan[], cfg = DEF) => {
+  run(name, pl, cfg);
+  const r = results.at(-1)!;
+  console.log('      per tren BTC (n, R bersih):', JSON.stringify(r.regime), ' per bulan:', JSON.stringify(r.byMonth));
+};
+show('T-A  Auto sekarang', planA(['GOLD', '3TF', '15M1H', '1H4H']));
+show('T-A+ Auto sekarang + tren 1H+4H', T(planA(['GOLD', '3TF', '15M1H', '1H4H'])));
+show('T-B3 Swing 1H SL 2×ATR TP 2R (sudah 4H+1H searah)', planATR('1H4H', 2, 2));
+show('T-B4 Swing 1H SL 1,5×ATR TP 2R BE 1R', planATR('1H4H', 1.5, 2, { beAtR: 1 }));
+show('T-C2 Swing 4H SL 1,5×ATR TP 3R', planATR('S4H', 1.5, 3));
+show('T-C2+ Swing 4H + tren 1H+4H', T(planATR('S4H', 1.5, 3)));
+show('T-C1+ Swing 4H TP 2R + tren 1H+4H', T(planATR('S4H', 1.5, 2)));
+show('T-D1 Scalp 15m pullback TP 1,5R (sudah 4H+1H)', planScalp({ rr: 1.5 }));
+show('T-G3 Entry 15m, exit tren 1H (sudah 4H+1H)', planScalp({ rr: 50, trendExit: '1h' }));
+show('T-G7 = G3 + volume ≥1,5×', planScalp({ rr: 50, trendExit: '1h', volMin: 1.5 }));
+show('T-G7b = G3 + volume ≥1,7×', planScalp({ rr: 50, trendExit: '1h', volMin: 1.7 }));
+show('T-G7 LONG saja', planScalp({ rr: 50, trendExit: '1h', volMin: 1.5 }).filter((p) => p.dir === 'LONG'));
+show('T-R  Acak + tren 1H+4H', T(planRandom(7, 60)));
+FEE_IN = 0.0002; FEE_TP = 0.0002; FEE_SL = 0.0005;
+show('T-C2m Swing 4H + tren 1H+4H, fee maker', T(planATR('S4H', 1.5, 3)));
+show('T-G7m G7 fee maker', planScalp({ rr: 50, trendExit: '1h', volMin: 1.5 }));
+FEE_IN = FEE; FEE_TP = FEE; FEE_SL = FEE;
+
 void rA;
-writeFileSync(`${DIR}/data/results.json`, JSON.stringify({ results, extra }, null, 1));
+writeFileSync(`${DIR}/data/results-p${process.env.BT_PERIOD ?? '1'}.json`, JSON.stringify({ results, extra }, null, 1));
 console.log('\nper bulan:');
 for (const r of results) console.log(r.name.padEnd(58), JSON.stringify(r.byMonth), JSON.stringify(r.reasons));

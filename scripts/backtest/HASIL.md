@@ -23,3 +23,26 @@ Kesimpulan:
 - G7 satu-satunya yang plus, tapi rapuh: volume ≥1,3× → −15%, ≥1,7× → +32%, ≥2× → −35%; LONG +103%, SHORT −46%. Belum layak dipakai.
 
 Rincian per bulan & semua varian: jalankan `npx vite-node scripts/backtest/sim6m.ts`.
+
+## Uji ulang: Nov 2025–Apr 2026 + filter tren 1H+4H
+
+`BT_PERIOD=2 npx vite-node scripts/backtest/sim6m.ts` (data: `MONTHS="2025-09 2025-10 2025-11 2025-12 2026-01 2026-02" bash scripts/backtest/download.sh`).
+Kondisi pasar periode 2: turun tajam (BTC −30%, ETH −41%, SOL −56%).
+"+ tren 1H+4H" = arah trade wajib sama dengan EMA9/21 di 1H **dan** 4H.
+
+| Strategi | Mei–Okt 2026 | Nov 2025–Apr 2026 |
+|---|---:|---:|
+| Auto sekarang (15m) | −89,5% | −98,1% |
+| Auto sekarang + tren 1H+4H | −90,8% | −96,8% |
+| Swing 1H (4H+1H searah), SL 2×ATR, TP 2R | −12,1% | −39,6% |
+| Swing 4H, SL 1,5×ATR, TP 3R | −1,4% | **+2,1%** |
+| Swing 4H + tren 1H+4H | −2,4% | −19,8% |
+| Scalping 15m pullback, TP 1,5R | −73,6% | −92,1% |
+| Entry 15m, exit tren 1H, volume ≥1,5× (G7) | +15,6% | **−64,1%** |
+| G7 LONG saja | +103,4% | −50,9% |
+
+Kesimpulan:
+- G7 (satu-satunya yang plus di periode 1) gagal total di periode 2 → hasil kebetulan, bukan edge.
+- Filter tren 1H+4H tidak menolong: auto 15m tetap hancur, swing 4H malah jadi lebih jelek di periode 2.
+- Semua strategi 15m rugi besar di kedua periode. Hanya swing 4H (tanpa filter tambahan) yang konsisten di sekitar impas
+  (−1,4% dan +2,1%, drawdown 16–18%), tapi itu artinya belum ada keuntungan nyata.
