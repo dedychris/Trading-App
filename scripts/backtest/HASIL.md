@@ -62,3 +62,30 @@ Aturan dikunci sebelum melihat periode 3: Swing 4H (SL 1,5×ATR4h, TP 3R) + tida
 
 Kesimpulan: lolos di periode 3, tapi gagal di dua periode lain begitu dipakai sebagai aturan sungguhan
 (slot yang kosong terisi trade lain yang lebih jelek). Tidak ada strategi yang untung konsisten selama 18 bulan.
+
+## Uji #1 Donchian breakout & #2 momentum harian
+
+`npx vite-node scripts/backtest/trend.ts` (butuh data ketiga periode). Aturan dikunci sebelum melihat hasil:
+- #1 Donchian: entry close tembus high/low N candle, SL 2×ATR14 (statis), keluar saat close tembus low/high M candle.
+  Risiko 0,7% saldo per trade, maks 5 posisi, 1 per koin, SL dicek candle 1 jam.
+- #2 Momentum: tiap 00:00 UTC, return N hari > 0 → long, < 0 → short; ganti cuma kalau arah berbalik.
+  Ukuran posisi = saldo × 0,1% / volatilitas harian 20 hari. Funding tidak dihitung.
+
+| Strategi | Mei–Okt 2025 | Nov 2025–Apr 2026 | Mei–Okt 2026 | Total 18 bulan |
+|---|---:|---:|---:|---:|
+| 1a Donchian harian 20/10 | −4,1% | +1,0% | +7,2% | +3,8% |
+| 1b Donchian harian 55/20 | +1,9% | +0,9% | −1,7% | +1,0% |
+| 1c Donchian 4H 55/20 | +5,7% | −18,9% | +49,5% | +28% |
+| Acak, keluar seperti 1a | −14,8% | +2,5% | +11,1% | −3% |
+| 2 Momentum 7 hari | +3,8% | −7,9% | +26,8% | +21% |
+| 2 Momentum 14 hari | −16,2% | +4,8% | +10,4% | −3% |
+| 2 Momentum 30 hari | +4,3% | −10,0% | +19,2% | +12% |
+| Long semua koin terus (ukuran sama dgn #2) | +12,2% | −24,2% | +9,1% | −6% |
+| Buy & hold BTC | +16,4% | −30,4% | +1,6% | −18% |
+
+Kesimpulan:
+- Tidak ada yang lolos syarat "plus di ketiga periode".
+- Donchian harian (1a/1b) hasilnya kecil dan tidak beda jauh dari entry acak → belum ada bukti edge.
+- Donchian 4H dan momentum 7/30 hari total 18 bulan plus, tapi rugi di periode turun (Nov 2025–Apr 2026).
+  Hasil Donchian 4H di Mei–Okt 2026 banyak dari 1–2 koin yang naik ±380% (UNI, NEAR).
+- Di periode turun, momentum jauh lebih tahan dibanding long terus (−8%/−10% vs −24%) karena bisa short.
