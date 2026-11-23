@@ -89,3 +89,21 @@ Kesimpulan:
 - Donchian 4H dan momentum 7/30 hari total 18 bulan plus, tapi rugi di periode turun (Nov 2025–Apr 2026).
   Hasil Donchian 4H di Mei–Okt 2026 banyak dari 1–2 koin yang naik ±380% (UNI, NEAR).
 - Di periode turun, momentum jauh lebih tahan dibanding long terus (−8%/−10% vs −24%) karena bisa short.
+
+## Uji gaya trade manual (riwayat 12 Nov 2026: 8 trade, 5 TP, 3 SL, +34,5 USDT)
+
+Pola riwayat: Golden/3TF/4H+1H, semua SHORT saat BTC bearish, 20×, TP 14% / SL 7% margin (= gerak harga 0,7% / 0,35%).
+Diuji di 20 koin utama, searah BTC & skip saat BTC netral.
+
+| Varian | Mei–Okt 2025 | Nov 2025–Apr 2026 | Mei–Okt 2026 |
+|---|---:|---:|---:|
+| M1 20×, TP 14 / SL 7, tanpa trailing | −100% | −100% | −100% |
+| M2 = M1 + trailing 4% | −99,9% | −99,9% | −99,8% |
+| M3 = M1 + filter ATR (SL ≥ 1× ATR15m) | −83,3% | −85,3% | −81,7% |
+| M4 = M3 + trailing 4% | −75,3% | −77,2% | −71,2% |
+| M5 = M1 tapi 10× | −70,0% | −96,2% | −85,0% |
+| M6 = 10× + filter ATR + trailing | −23,0% | −83,8% | −47,2% |
+
+- Di 20×, fee 0,1% notional = 2% margin per trade = 0,29R. Winrate impas 43%, winrate backtest 33–36%.
+- 5 TP dari 8 trade: peluangnya ±8% walau winrate asli cuma 33%, dan 8 trade itu satu hari, satu arah (SHORT) → praktis satu taruhan.
+- Trailing & filter ATR mengurangi rugi, tapi tidak membuat untung.

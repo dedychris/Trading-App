@@ -487,6 +487,23 @@ show('N-A   Auto sekarang (pembanding)', planA(['GOLD', '3TF', '15M1H', '1H4H'])
 show('N-Ax  Auto sekarang + skip BTC netral', planA(['GOLD', '3TF', '15M1H', '1H4H']), NEU);
 show('N-B3x Swing 1H SL 2×ATR TP 2R + skip BTC netral', planATR('1H4H', 2, 2), NEU);
 
+console.log('\n=== M. Gaya trade manual (riwayat 12 Nov 2026): Golden/3TF/4H+1H, 20×, TP 14% SL 7% margin, searah BTC ===');
+const atrOk = (p: Plan) => {
+  const s15 = SS[p.sym]['15m']!;
+  const i = idxAt(s15, p.t);
+  const atrPct = (s15.atr[i] / s15.candles[i].c) * 100;
+  const slPct = (Math.abs(entryRef(p) - p.sl) / entryRef(p)) * 100;
+  return slPct >= atrPct; // jarak SL ≥ 1× ATR15m (filter ATR app)
+};
+const MK = ['GOLD', '3TF', '1H4H'] as SetupKey[];
+const NEU2 = { ...DEF, skipBtcNeutral: true };
+show('M1 20× TP14/SL7, tanpa trailing, searah BTC (skip netral)', planA(MK, false, 20), NEU2);
+show('M2 = M1 + trailing 4%', planA(MK, true, 20), NEU2);
+show('M3 = M1 + filter ATR (SL ≥ 1× ATR15m)', planA(MK, false, 20).filter(atrOk), NEU2);
+show('M4 = M3 + trailing 4%', planA(MK, true, 20).filter(atrOk), NEU2);
+show('M5 = M1 tapi 10×', planA(MK, false, 10), NEU2);
+show('M6 = M5 + filter ATR + trailing', planA(MK, true, 10).filter(atrOk), NEU2);
+
 void rA;
 writeFileSync(`${DIR}/data/results-p${process.env.BT_PERIOD ?? '1'}.json`, JSON.stringify({ results, extra }, null, 1));
 console.log('\nper bulan:');
