@@ -10,10 +10,10 @@ export type AuditPoint = { tone: 'good' | 'bad' | 'info'; text: string };
 export function auditTrade(p: Position): AuditPoint[] {
   const out: AuditPoint[] = [];
   const e = p.snapEntry;
-  const won = p.reason === 'TP' || p.reason === 'TRAIL' || (p.reason === 'MANUAL' && (p.exit ?? 0) !== 0 && (p.dir === 'LONG' ? p.exit! > p.entry : p.exit! < p.entry));
-  if (p.closedAt) out.push({ tone: 'info', text: `Durasi posisi ${fmtDuration(p.closedAt - p.openedAt)}, ditutup karena ${p.reason === 'TP' ? 'TP kena' : p.reason === 'TRAIL' ? `TP trailing kena (profit sempat sampai +${(p.peakRoe ?? 0).toFixed(1)}% margin)` : p.reason === 'SL' ? 'SL kena' : p.reason === 'LIQ' ? 'likuidasi' : 'ditutup manual'}.` });
+  const won = p.reason === 'TP' || p.reason === 'TRAIL' || ((p.reason === 'MANUAL' || p.reason === 'FLIP') && (p.exit ?? 0) !== 0 && (p.dir === 'LONG' ? p.exit! > p.entry : p.exit! < p.entry));
+  if (p.closedAt) out.push({ tone: 'info', text: `Durasi posisi ${fmtDuration(p.closedAt - p.openedAt)}, ditutup karena ${p.reason === 'TP' ? 'TP kena' : p.reason === 'TRAIL' ? `TP trailing kena (profit sempat sampai +${(p.peakRoe ?? 0).toFixed(1)}% margin)` : p.reason === 'SL' ? 'SL kena' : p.reason === 'LIQ' ? 'likuidasi' : p.reason === 'FLIP' ? 'arah momentum berbalik (auto Momentum)' : 'ditutup manual'}.` });
   if (!e) {
-    out.push({ tone: 'info', text: 'Tidak ada snapshot indikator saat entry (order dibuka tanpa data scan).' });
+    out.push({ tone: 'info', text: p.strategy === 'MOM' ? 'Posisi auto Momentum harian: dibuka/ditutup berdasarkan arah return N hari, bukan sinyal scanner.' : 'Tidak ada snapshot indikator saat entry (order dibuka tanpa data scan).' });
     return out;
   }
   if (e.setup) {

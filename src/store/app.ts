@@ -4,7 +4,7 @@ import type { ScanResult } from '../lib/scanner';
 import { fmtUsd } from '../lib/format';
 import { feeRate, liqPrice, pnl, SL_PCT, TP_PCT, tpSlPrices } from '../lib/sim';
 import type { Dir } from '../lib/signals';
-import { emptyBook, lockedMargin, migrateSettings, reconcileBook, sessionArchive, uid, walletBalance, type SessionStart } from './book';
+import { emptyBook, lockedMargin, normalizeBook, sessionArchive, uid, walletBalance, type SessionStart } from './book';
 import type { Book, CloseReason, PendingOrder, Position, Settings, Snapshot } from './types';
 
 const KEY = 'msp-book-v1';
@@ -12,12 +12,7 @@ const KEY = 'msp-book-v1';
 function loadBook(): Book {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) {
-      const b = JSON.parse(raw) as Book;
-      const d = emptyBook();
-      const s0 = { ...d.settings, ...b.settings };
-      return reconcileBook({ ...d, ...b, settings: migrateSettings({ ...s0, filters: { ...d.settings.filters, ...b.settings?.filters }, auto: { ...d.settings.auto, rulesV: undefined, ...b.settings?.auto } }) });
-    }
+    if (raw) return normalizeBook(JSON.parse(raw) as Book);
   } catch {
     /* data rusak / storage diblokir */
   }
@@ -40,6 +35,8 @@ type AppState = {
   autoLog: AutoLog[];
   autoDecision: Record<string, AutoLog>; // keputusan auto terakhir per koin (ditampilkan di kartu)
   autoRun: { lastAt?: number; nextAt?: number; running?: boolean };
+  momLog: AutoLog[];
+  momRun: { lastAt?: number; running?: boolean; error?: string };
   setBook: (b: Book) => void;
   updateSettings: (p: Partial<Settings>) => void;
   toast: (text: string, tone?: Toast['tone']) => void;
@@ -57,6 +54,8 @@ export const useApp = create<AppState>((set, get) => ({
   autoLog: [],
   autoDecision: {},
   autoRun: {},
+  momLog: [],
+  momRun: {},
   setBook: (b) => set({ book: b }),
   updateSettings: (p) => {
     const b = get().book;

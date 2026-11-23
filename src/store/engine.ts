@@ -10,7 +10,11 @@ import type { CloseReason, Position } from './types';
 import { step } from '../lib/trailing';
 import { TP_PCT } from '../lib/sim';
 
-const posLike = (p: Position) => ({ dir: p.dir, entry: p.entry, leverage: p.leverage, tp: p.tp, sl: p.sl, liq: p.liq, tpPct: p.tpPct ?? TP_PCT, trailPct: p.trailPct ?? null });
+const posLike = (p: Position) =>
+  p.strategy === 'MOM'
+    ? // Momentum: tanpa TP/SL, cuma likuidasi yang dicek (keluar saat arah berbalik diurus src/lib/momentum.ts)
+      { dir: p.dir, entry: p.entry, leverage: p.leverage, tp: p.dir === 'LONG' ? Infinity : -Infinity, sl: p.liq, liq: p.liq, tpPct: TP_PCT, trailPct: null }
+    : { dir: p.dir, entry: p.entry, leverage: p.leverage, tp: p.tp, sl: p.sl, liq: p.liq, tpPct: p.tpPct ?? TP_PCT, trailPct: p.trailPct ?? null };
 
 /**
  * Cek satu tick/candle. Kalau trailing baru aktif atau profit tertinggi naik ≥ 0,5% margin,
@@ -40,7 +44,7 @@ function announceTrail(p: Position) {
 function announceClose(p: Position) {
   const { settings } = useApp.getState().book;
   const net = positionLedger(useApp.getState().book, p.id).net;
-  const label = p.reason === 'TP' ? '✅ TP kena' : p.reason === 'TRAIL' ? '✅ TP trailing kena' : p.reason === 'SL' ? '❌ SL kena' : p.reason === 'LIQ' ? '💀 Likuidasi' : 'Posisi ditutup';
+  const label = p.reason === 'TP' ? '✅ TP kena' : p.reason === 'TRAIL' ? '✅ TP trailing kena' : p.reason === 'SL' ? '❌ SL kena' : p.reason === 'LIQ' ? '💀 Likuidasi' : p.reason === 'FLIP' ? '📈 Momentum berbalik' : 'Posisi ditutup';
   const text = `${p.auto ? '🤖 ' : ''}${label}: ${p.symbol} ${p.dir} ${p.leverage}× → ${fmtUsd(net, true)} USDT`;
   useApp.getState().toast(text, net >= 0 ? 'good' : 'bad');
   if (settings.sound) beep(net >= 0 ? 'good' : 'bad');

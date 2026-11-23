@@ -84,7 +84,7 @@ function TradeRow({ p, book, learn }: { p: Position; book: Book; learn: Book }) 
   const audit = open ? auditTrade(p) : [];
   const feats = open ? positionFeatures(p) : [];
   const pat = open ? matchPatterns(feats, learn) : null;
-  const reasonTone = p.reason === 'TP' || p.reason === 'TRAIL' ? 'bg-up/15 text-up' : p.reason === 'MANUAL' ? 'bg-panel2 text-mute' : 'bg-down/15 text-down';
+  const reasonTone = p.reason === 'TP' || p.reason === 'TRAIL' ? 'bg-up/15 text-up' : p.reason === 'MANUAL' || p.reason === 'FLIP' ? 'bg-panel2 text-mute' : 'bg-down/15 text-down';
   return (
     <div className="card">
       <button className="flex w-full items-center gap-2 p-3 text-left" onClick={() => setOpen(!open)}>
@@ -93,8 +93,8 @@ function TradeRow({ p, book, learn }: { p: Position; book: Book; learn: Book }) 
             <span className="font-bold">{base(p.symbol)}</span>
             <DirBadge dir={p.dir} />
             <span className="chip bg-panel2">{p.leverage}×</span>
-            <span className={`chip ${reasonTone}`}>{p.reason === 'TRAIL' ? 'TP ↗ trailing' : p.reason}</span>
-            {p.auto && <span className="chip bg-accent/15 text-accent">🤖 AUTO</span>}
+            <span className={`chip ${reasonTone}`}>{p.reason === 'TRAIL' ? 'TP ↗ trailing' : p.reason === 'FLIP' ? 'arah berbalik' : p.reason}</span>
+            {p.strategy === 'MOM' ? <span className="chip bg-accent/15 text-accent">📈 MOMENTUM</span> : p.auto && <span className="chip bg-accent/15 text-accent">🤖 AUTO</span>}
           </div>
           <div className="mt-0.5 text-[11px] text-mute">
             {fmtTime(p.closedAt)} · {fmtDuration((p.closedAt ?? 0) - p.openedAt)}

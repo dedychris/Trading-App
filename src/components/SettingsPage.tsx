@@ -9,6 +9,9 @@ import { signInGoogle, signOut, syncConfigured, syncNow } from '../store/sync';
 import { fmtIdr, fmtNum, fmtPct, fmtTime, fmtUsd, parseIdr } from '../lib/format';
 import { previewOrder } from '../lib/sim';
 import { autoKeys, autoMargin, deviceId, todayPnl } from '../store/autotrader';
+import { manualClose } from '../store/engine';
+import { nextDailyClose } from '../lib/momentum';
+import { pnl } from '../lib/sim';
 import { Idr, Signed } from './ui';
 
 function Toggle({ on, onChange, label, desc }: { on: boolean; onChange: (v: boolean) => void; label: ReactNode; desc?: ReactNode }) {
@@ -53,6 +56,98 @@ function NumInput({ value, onChange, max = 1000 }: { value: number; onChange: (v
   );
 }
 
+function MomentumSection() {
+  const m = useApp((x) => x.book.settings.mom);
+  const book = useApp((x) => x.book);
+  const prices = useApp((x) => x.prices);
+  const logs = useApp((x) => x.momLog);
+  const run = useApp((x) => x.momRun);
+  const update = useApp((x) => x.updateSettings);
+  const [confirm, setConfirm] = useState(false);
+  const set = (p: Partial<typeof m>) => update({ mom: { ...m, ...p } });
+  const open = Object.values(book.positions).filter((p) => p.status === 'open' && p.strategy === 'MOM');
+  const margin = open.reduce((s, p) => s + p.margin, 0);
+  const notional = open.reduce((s, p) => s + p.qty * p.entry, 0);
+  const upnl = open.reduce((s, p) => s + (prices[p.symbol] ? pnl(p.dir, p.entry, prices[p.symbol], p.qty) : 0), 0);
+  const nLong = open.filter((p) => p.dir === 'LONG').length;
+  const wallet = walletBalance(book);
+  const bot = book.bot;
+  const closeAll = () => {
+    for (const p of open) manualClose(p.id);
+    setConfirm(false);
+  };
+  return (
+    <section className="card p-4 lg:col-span-2">
+      <h2 className="label mb-2">📈 Auto Momentum harian (paper trading)</h2>
+      <div className="grid gap-x-6 lg:grid-cols-2">
+        <div className="divide-y divide-line">
+          <Toggle
+            on={m.enabled}
+            onChange={(v) => set({ enabled: v })}
+            label={<>Auto Momentum {m.enabled ? <span className="chip ml-1 bg-accent text-black">ON</span> : <span className="chip ml-1 bg-panel2 text-mute">OFF</span>}</>}
+            desc={`Tiap 07:00 WIB (candle harian Binance close), untuk 20 koin utama: harga naik dibanding ${m.lookback} hari lalu → LONG, turun → SHORT. Posisi cuma diganti kalau arahnya berbalik. Tanpa TP/SL. Jalan saat app dibuka, dan terus jalan walau app ditutup kalau bot server (GitHub Actions) sudah disetel.`}
+          />
+          <div className="space-y-3 py-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-28">Lihat ke belakang</span>
+              <div className="seg">
+                {[7, 14, 30].map((n) => (
+                  <button key={n} data-on={m.lookback === n} onClick={() => set({ lookback: n })} className="!py-1 !text-xs">{n} hari</button>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-28">Ukuran posisi</span>
+              <NumInput value={m.volPct} onChange={(v) => set({ volPct: Math.min(1, v) })} max={1} />
+              <span className="text-xs text-mute">% saldo gerak per koin per hari (0,1 = seperti backtest)</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-28">Leverage</span>
+              <NumInput value={m.leverage} onChange={(v) => set({ leverage: Math.max(1, Math.min(10, Math.round(v))) })} max={10} />
+              <span className="text-xs text-mute">× (1× = praktis tidak bisa likuidasi, margin = nilai posisi. 2× sempat kena likuidasi 5 posisi saat crash 10 Okt 2025)</span>
+            </div>
+          </div>
+        </div>
+        <div className="space-y-3 py-2 text-sm">
+          <div className="rounded-lg bg-panel2 p-3 text-xs">
+            <div className="label mb-1">Hasil backtest ({m.lookback === 30 ? '30' : m.lookback} hari, 4 periode × 6 bulan)</div>
+            {m.lookback === 7 && <div>Mei–Okt 2025 +3,8% · Nov 25–Apr 26 −7,9% · Mei–Okt 2026 +26,8% · Nov 24–Apr 25 +30,5% · drawdown terburuk 23%</div>}
+            {m.lookback === 14 && <div>Mei–Okt 2025 −16,2% · Nov 25–Apr 26 +4,8% · Mei–Okt 2026 +10,4% · Nov 24–Apr 25 +75,8% · drawdown terburuk 32%</div>}
+            {m.lookback === 30 && <div>Mei–Okt 2025 +4,3% · Nov 25–Apr 26 −10,0% · Mei–Okt 2026 +19,2% · Nov 24–Apr 25 +47,7% · drawdown terburuk 24%</div>}
+            <div className="mt-1 text-warn">⚠️ Rugi saat pasar turun tajam. Belum lolos syarat "plus di semua periode" — paper trading ini uji maju (forward test).</div>
+          </div>
+          <div className="rounded-lg bg-panel2 p-3 text-xs">
+            <div className="label mb-1">Status</div>
+            <div>Terakhir diproses: <b>{bot?.momLastT ? new Date(bot.momLastT).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : 'belum pernah'}</b>{bot?.momRunBy ? ` oleh ${bot.momRunBy.startsWith('server') ? 'bot server' : 'app'}` : ''}{bot?.momRunAt ? ` (${fmtTime(bot.momRunAt)})` : ''}</div>
+            <div>Berikutnya: <b>{new Date(nextDailyClose(Date.now())).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}</b></div>
+            {run.error && <div className="text-down">Gagal ambil data: {run.error}</div>}
+            <div className="mt-1">Posisi terbuka: <b>{open.length}</b> ({nLong} LONG · {open.length - nLong} SHORT) · nilai posisi {fmtUsd(notional)} USDT ({fmtNum(wallet > 0 ? (notional / wallet) * 100 : 0, 0)}% saldo) · margin {fmtUsd(margin)} USDT</div>
+            <div>PnL belum terealisasi: <Signed v={upnl}>{fmtUsd(upnl, true)}</Signed> USDT<Idr v={upnl} sign prefix=" (" suffix=")" /></div>
+          </div>
+          {open.length > 0 &&
+            (!confirm ? (
+              <button className="btn-ghost w-full" onClick={() => setConfirm(true)}>Tutup semua posisi Momentum ({open.length})</button>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                <button className="btn-ghost" onClick={() => setConfirm(false)}>Batal</button>
+                <button className="btn-down" onClick={closeAll}>Ya, tutup semua di harga live</button>
+              </div>
+            ))}
+          {logs.length > 0 && (
+            <div className="max-h-48 space-y-1 overflow-y-auto text-xs">
+              {logs.map((l, i) => (
+                <div key={i} className={l.tone === 'good' ? 'text-up' : l.tone === 'bad' ? 'text-down' : 'text-mute'}>
+                  <span className="text-mute">{fmtTime(l.t)}</span> {l.text}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function AutoSection() {
   const a = useApp((x) => x.book.settings.auto);
   const bnb = useApp((x) => x.book.settings.bnb);
@@ -69,7 +164,7 @@ function AutoSection() {
   const today = todayPnl();
   return (
     <section className="card p-4 lg:col-span-2">
-      <h2 className="label mb-2">🤖 Auto trading (simulasi)</h2>
+      <h2 className="label mb-2">🤖 Auto trading lama — sinyal 15m (simulasi)</h2>
       <div className="grid gap-x-6 lg:grid-cols-2">
         <div className="divide-y divide-line">
           <Toggle
@@ -384,6 +479,7 @@ export function SettingsPage() {
         </div>
       </Section>
 
+      <MomentumSection />
       <AutoSection />
 
       <Section title="Filter indikator tambahan">

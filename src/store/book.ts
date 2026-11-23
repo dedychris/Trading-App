@@ -18,6 +18,7 @@ export const defaultSettings = (): Settings => ({
   marginPercent: 10,
   leverage: 20,
   filters: { volume: false, ema200: false, bollinger: false, atr: false, sentiment: false },
+  mom: { enabled: true, lookback: 30, volPct: 0.1, leverage: 1 },
   sound: true,
   notify: false,
   updatedAt: 0,
@@ -37,8 +38,9 @@ export function migrateSettings(s: Settings): Settings {
   const d = defaultSettings().auto;
   let a = { ...d, ...s.auto };
   const v = s.auto?.rulesV ?? 1;
-  if (v >= AUTO_RULES_V) return { ...s, auto: a };
-  let out = s;
+  const mom = { ...defaultSettings().mom, ...s.mom };
+  if (v >= AUTO_RULES_V) return { ...s, auto: a, mom };
+  let out = { ...s, mom };
   if (v < 2) a = { ...a, dailyLossPct: 15, requireWinrate: false, maxSlPerCoinDay: 3 };
   if (v < 3) {
     a = { ...a, marginMode: 'split', marginPercent: 10 };
@@ -62,6 +64,13 @@ export const emptyBook = (epoch = 1, start: SessionStart = {}): Book => ({
   ledger: {},
   settings: defaultSettings(),
 });
+
+/** Lengkapi buku dari versi lama (localStorage / Supabase) dengan default + migrasi setting. */
+export function normalizeBook(b: Book): Book {
+  const d = emptyBook();
+  const s0 = { ...d.settings, ...b.settings };
+  return reconcileBook({ ...d, ...b, settings: migrateSettings({ ...s0, filters: { ...d.settings.filters, ...b.settings?.filters }, auto: { ...d.settings.auto, rulesV: undefined, ...b.settings?.auto } }) });
+}
 
 /** Saldo awal sesi ini (USDT). Sesi lama tanpa angka = 10.000. */
 export const startBalanceOf = (b: { startBalance?: number }) => b.startBalance ?? START_BALANCE;
@@ -108,7 +117,8 @@ export function learningTrades(b: Book): LearnTrade[] {
   const add = (positions: Record<string, Position>, ledger: Record<string, LedgerEntry>) => {
     const net: Record<string, number> = {};
     for (const e of Object.values(ledger)) net[e.posId] = (net[e.posId] ?? 0) + e.amt;
-    for (const p of Object.values(positions)) if (p.status === 'closed') out.push({ p, net: net[p.id] ?? 0 });
+    // posisi auto Momentum tidak ikut bahan belajar pola (bukan dari sinyal scanner)
+    for (const p of Object.values(positions)) if (p.status === 'closed' && p.strategy !== 'MOM') out.push({ p, net: net[p.id] ?? 0 });
   };
   add(b.positions, b.ledger);
   for (const a of Object.values(b.archives ?? {})) add(a.positions, a.ledger);
@@ -232,6 +242,15 @@ function mergeArchives(a: Book['archives'], b: Book['archives']) {
   return out;
 }
 
+/** Progres auto Momentum: ambil yang sudah memproses candle harian paling baru. */
+function mergeBot(a: Book['bot'], b: Book['bot']): Book['bot'] {
+  if (!a) return b;
+  if (!b) return a;
+  const ka = [a.momLastT ?? 0, a.momRunAt ?? 0];
+  const kb = [b.momLastT ?? 0, b.momRunAt ?? 0];
+  return kb[0] > ka[0] || (kb[0] === ka[0] && kb[1] > ka[1]) ? b : a;
+}
+
 /** Gabungkan dua versi buku (lokal & cloud). Idempoten & deterministik. */
 export function mergeBooks(a: Book, b: Book): Book {
   const archives = mergeArchives(a.archives, b.archives);
@@ -244,6 +263,7 @@ export function mergeBooks(a: Book, b: Book): Book {
     return reconcileBook({ ...withArch(win), settings: migrateSettings(newer(a.settings, b.settings)) });
   }
   const positions = mergePositions(a.positions, b.positions);
+  const bot = mergeBot(a.bot, b.bot);
   const orders = { ...a.orders };
   for (const [id, o] of Object.entries(b.orders)) {
     const cur = orders[id];
@@ -260,6 +280,7 @@ export function mergeBooks(a: Book, b: Book): Book {
     ...(startBalance !== undefined ? { startBalance } : {}),
     ...(startIdr !== undefined ? { startIdr } : {}),
     ...(idrRate !== undefined ? { idrRate } : {}),
+    ...(bot ? { bot } : {}),
     positions,
     orders,
     ledger: { ...a.ledger, ...b.ledger },

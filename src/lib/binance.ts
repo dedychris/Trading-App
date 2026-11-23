@@ -3,13 +3,14 @@
 // (misal dibuka dari hosting statis), otomatis coba langsung ke fapi.binance.com.
 
 export type Candle = { t: number; o: number; h: number; l: number; c: number; v: number };
-export type Interval = '1m' | '15m' | '1h' | '4h';
+export type Interval = '1m' | '15m' | '1h' | '4h' | '1d';
 
 export const INTERVAL_MS: Record<Interval, number> = {
   '1m': 60_000,
   '15m': 900_000,
   '1h': 3_600_000,
   '4h': 14_400_000,
+  '1d': 86_400_000,
 };
 
 let mode: 'proxy' | 'direct' = 'proxy';

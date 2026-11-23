@@ -1,0 +1,36 @@
+# Bot auto Momentum (paper trading): jalan sendiri tiap hari setelah candle harian Binance close (07:00 WIB),
+# plus beberapa jadwal cadangan (jadwal GitHub kadang telat/terlewat; bot aman dijalankan berkali-kali).
+# Butuh secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, APP_URL (lihat scripts/bot/momentum-bot.ts).
+# Catatan: jadwal otomatis GitHub hanya jalan dari branch utama (main).
+name: Auto Momentum (paper trading)
+
+on:
+  schedule:
+    - cron: '4 0 * * *' # 07:04 WIB
+    - cron: '23 1,6,12,18 * * *' # cadangan
+  workflow_dispatch: {}
+
+concurrency:
+  group: momentum-bot
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Jalankan bot Momentum
+        run: npx vite-node scripts/bot/momentum-bot.ts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          APP_URL: ${{ secrets.APP_URL }}

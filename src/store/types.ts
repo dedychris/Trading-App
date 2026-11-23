@@ -16,7 +16,7 @@ export type Snapshot = {
   signalPrice?: number; // harga close candle sinyal = harga entry versi backtest (auto)
 };
 
-export type CloseReason = 'TP' | 'TRAIL' | 'SL' | 'LIQ' | 'MANUAL';
+export type CloseReason = 'TP' | 'TRAIL' | 'SL' | 'LIQ' | 'MANUAL' | 'FLIP'; // FLIP = arah momentum berbalik
 
 export type Position = {
   id: string;
@@ -33,6 +33,7 @@ export type Position = {
   tpPct?: number; // TP % dari margin saat entry (kosong = 14)
   slPct?: number; // SL % dari margin saat entry (kosong = 7)
   auto?: boolean; // dibuka oleh auto trading
+  strategy?: 'MOM'; // dibuka oleh auto Momentum harian (tanpa TP/SL, keluar saat arah berbalik)
   trailPct?: number | null; // jarak trailing (% margin); kosong = trailing mati
   trailActive?: boolean;
   peakRoe?: number; // profit tertinggi (% margin) sejak trailing aktif
@@ -94,6 +95,14 @@ export type AutoSettings = {
   rulesV?: number; // versi aturan auto (untuk migrasi setting lama)
 };
 
+/** 📈 Auto Momentum harian (paper): tiap close candle harian (07:00 WIB), return N hari > 0 → LONG, < 0 → SHORT. */
+export type MomSettings = {
+  enabled: boolean;
+  lookback: number; // N hari (backtest: 7 / 14 / 30)
+  volPct: number; // ukuran posisi: tiap koin bergerak ±volPct% saldo per hari (backtest 0,1)
+  leverage: number;
+};
+
 export type Settings = {
   theme: 'light' | 'dark';
   tpPct: number; // TP default order manual (% dari margin)
@@ -101,6 +110,7 @@ export type Settings = {
   trailOn: boolean;
   trailPct: number; // jarak trailing TP (% dari margin)
   auto: AutoSettings;
+  mom: MomSettings;
   bnb: boolean;
   marginMode: 'fixed' | 'percent';
   marginFixed: number;
@@ -131,6 +141,8 @@ export type Book = {
   startIdr?: number;
   idrRate?: number; // kurs Rp per USDT dikunci saat sesi dimulai (dipakai untuk tampilan Rupiah)
   archives?: Record<string, ArchivedSession>; // key = epoch
+  /** Progres auto Momentum: candle harian terakhir yang sudah diproses (dipakai app & server, digabung pakai yang terbaru). */
+  bot?: { momLastT?: number; momRunAt?: number; momRunBy?: string };
   positions: Record<string, Position>;
   orders: Record<string, PendingOrder>;
   ledger: Record<string, LedgerEntry>;

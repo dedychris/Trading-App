@@ -13,6 +13,7 @@ function PositionCard({ p }: { p: Position }) {
   const px = useApp((s) => s.prices[p.symbol]);
   const book = useApp((s) => s.book);
   const open = useApp((s) => s.openDetail);
+  const mom = useApp((s) => s.book.settings.mom);
   const [confirm, setConfirm] = useState(false);
   const led = positionLedger(book, p.id);
   const u = px ? pnl(p.dir, p.entry, px, p.qty) : 0;
@@ -30,7 +31,7 @@ function PositionCard({ p }: { p: Position }) {
         <DirBadge dir={p.dir} />
         <span className="chip bg-panel2">{p.leverage}×</span>
         {p.entryType === 'limit' && <span className="chip bg-panel2 text-mute">limit</span>}
-        {p.auto && <span className="chip bg-accent/15 text-accent">🤖 AUTO</span>}
+        {p.strategy === 'MOM' ? <span className="chip bg-accent/15 text-accent">📈 MOMENTUM</span> : p.auto && <span className="chip bg-accent/15 text-accent">🤖 AUTO</span>}
         <span className="ml-auto text-[11px] text-mute">{fmtDuration(Date.now() - p.openedAt)}</span>
       </div>
       <div className="mt-2 flex items-end justify-between gap-2">
@@ -45,6 +46,11 @@ function PositionCard({ p }: { p: Position }) {
           <div>funding <Signed v={led.funding}>{fmtUsd(led.funding, true)}</Signed></div>
         </div>
       </div>
+      {p.strategy === 'MOM' ? (
+        <div className="mt-2 rounded-md bg-panel2 px-2 py-1 text-[11px] text-mute">
+          📈 Tanpa TP/SL. Ditutup otomatis saat arah return {mom.lookback} hari berbalik (dicek tiap 07:00 WIB).
+        </div>
+      ) : (
       <div className="mt-3">
         <div className="relative h-1.5 rounded-full bg-gradient-to-r from-down/60 via-panel2 to-up/60">
           <div className="absolute -top-1 h-3.5 w-1 rounded bg-ink" style={{ left: `calc(${prog}% - 2px)` }} />
@@ -54,6 +60,7 @@ function PositionCard({ p }: { p: Position }) {
           <span className="text-up">TP{p.trailPct ? ' ↗' : ''} {fmtPrice(p.tp)} <span className="text-mute">({fmtNum(toTp, 2)}%)</span></span>
         </div>
       </div>
+      )}
       {p.trailPct ? (
         <div className={`mt-2 rounded-md px-2 py-1 text-[11px] ${p.trailActive ? 'bg-up/10 text-up' : 'bg-panel2 text-mute'}`}>
           {p.trailActive ? (
