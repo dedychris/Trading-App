@@ -141,6 +141,17 @@ describe('migrasi setting v3/v4', () => {
   });
 });
 
+describe('migrasi setting v5', () => {
+  it('auto dimatikan sekali; kalau dinyalakan lagi tetap nyala', () => {
+    const s = emptyBook().settings;
+    expect(s.auto.enabled).toBe(false); // default baru: mati
+    const m = migrateSettings({ ...s, auto: { ...s.auto, enabled: true, rulesV: 4 } });
+    expect(m.auto.enabled).toBe(false);
+    expect(m.auto.rulesV).toBe(AUTO_RULES_V);
+    expect(migrateSettings({ ...m, auto: { ...m.auto, enabled: true } }).auto.enabled).toBe(true);
+  });
+});
+
 describe('sinkron: dua device menutup posisi yang sama', () => {
   // posisi SHORT BCH yang sama: device A tutup di trailing +86%, device B tutup di +14% (lebih dulu)
   function twoDevices() {

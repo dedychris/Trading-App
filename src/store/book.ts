@@ -3,7 +3,7 @@
 import { pnl, START_BALANCE } from '../lib/sim';
 import type { ArchivedSession, Book, LedgerEntry, Position, Settings } from './types';
 
-export const AUTO_RULES_V = 4;
+export const AUTO_RULES_V = 5;
 
 export const defaultSettings = (): Settings => ({
   theme: typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark',
@@ -12,7 +12,7 @@ export const defaultSettings = (): Settings => ({
   slPct: 7,
   trailOn: true,
   trailPct: 4,
-  auto: { enabled: true, deviceId: null, leverage: 10, marginMode: 'percent', marginFixed: 1, marginPercent: 10, tpPct: 14, slPct: 7, trailOn: true, trailPct: 4, maxOpen: 3, dailyLossPct: 15, freshCandles: 2, ignoreSmallSample: true, minSample: 10, with4h1h: true, wakeLock: true, requireWinrate: false, maxSlPerCoinDay: 3, maxDriftPct: 50, rulesV: AUTO_RULES_V },
+  auto: { enabled: false, deviceId: null, leverage: 10, marginMode: 'percent', marginFixed: 1, marginPercent: 10, tpPct: 14, slPct: 7, trailOn: true, trailPct: 4, maxOpen: 3, dailyLossPct: 15, freshCandles: 2, ignoreSmallSample: true, minSample: 10, with4h1h: true, wakeLock: true, requireWinrate: false, maxSlPerCoinDay: 3, maxDriftPct: 50, rulesV: AUTO_RULES_V },
   marginMode: 'percent',
   marginFixed: 1,
   marginPercent: 10,
@@ -30,6 +30,8 @@ export const defaultSettings = (): Settings => ({
  *     margin auto = saldo dibagi rata ke maks posisi (cuan langsung ikut jadi modal).
  * v4: "bagi rata" terlalu berisiko (1 SL ≈ −2,7% saldo, 3 posisi searah = seluruh saldo satu taruhan)
  *     → margin auto 10% saldo (tetap compounding).
+ * v5: backtest 18 bulan (scripts/backtest/HASIL.md) → strategi auto rugi di semua periode → auto dimatikan.
+ *     Bisa dinyalakan lagi manual; setelah itu pilihan user dihormati.
  */
 export function migrateSettings(s: Settings): Settings {
   const d = defaultSettings().auto;
@@ -43,6 +45,7 @@ export function migrateSettings(s: Settings): Settings {
     out = { ...out, marginMode: 'percent', marginPercent: 10 };
   }
   if (v < 4 && a.marginMode === 'split') a = { ...a, marginMode: 'percent', marginPercent: 10 };
+  if (v < 5) a = { ...a, enabled: false };
   return { ...out, auto: { ...a, rulesV: AUTO_RULES_V }, updatedAt: Date.now() };
 }
 

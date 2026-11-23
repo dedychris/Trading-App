@@ -76,7 +76,7 @@ function AutoSection() {
             on={a.enabled}
             onChange={(v) => set({ enabled: v })}
             label={<>Auto trading {a.enabled ? <span className="chip ml-1 bg-accent text-black">ON</span> : <span className="chip ml-1 bg-panel2 text-mute">OFF</span>}</>}
-            desc="Langsung scan saat aktif, lalu tiap candle 15m close: buka posisi untuk sinyal ⭐ Golden / 3TF searah / 1H+15M searah yang baru muncul. Koin: 20 market cap besar + 5 top volume. Cuma jalan selama app terbuka."
+            desc="Langsung scan saat aktif, lalu tiap candle 15m close: buka posisi untuk sinyal ⭐ Golden / 3TF searah / 1H+15M searah yang baru muncul. Koin: 20 market cap besar + 5 top volume. Cuma jalan selama app terbuka. ⚠️ Default mati: backtest 18 bulan (3 periode) strategi ini rugi 85–98% per 6 bulan."
           />
           <Toggle
             on={a.with4h1h}

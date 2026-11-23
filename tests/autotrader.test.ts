@@ -117,7 +117,7 @@ describe('auto trading', () => {
     const old = defaultSettings();
     old.auto = { ...old.auto, dailyLossPct: 5, requireWinrate: true, rulesV: undefined };
     const m = migrateSettings(old);
-    expect(m.auto).toMatchObject({ dailyLossPct: 15, requireWinrate: false, maxSlPerCoinDay: 3, rulesV: 4, marginMode: 'percent', marginPercent: 10 });
+    expect(m.auto).toMatchObject({ dailyLossPct: 15, requireWinrate: false, maxSlPerCoinDay: 3, rulesV: 5, marginMode: 'percent', marginPercent: 10 });
     expect(migrateSettings({ ...m, auto: { ...m.auto, dailyLossPct: 8 } }).auto.dailyLossPct).toBe(8);
   });
   it('syarat winrate nyala: winrate rendah tapi sampel < 10 → diabaikan & tetap entry; sampel besar → dilewati', async () => {
