@@ -8,6 +8,7 @@ import type { Candle } from '../../src/lib/binance';
 const DIR = process.env.BT_DIR ?? new URL('.', import.meta.url).pathname.replace(/\/$/, '');
 const COINS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'TRXUSDT', 'LINKUSDT', 'AVAXUSDT', 'SUIUSDT', 'TONUSDT', 'DOTUSDT', 'LTCUSDT', 'BCHUSDT', 'XLMUSDT', 'HBARUSDT', 'NEARUSDT', 'UNIUSDT', 'APTUSDT'];
 const PERIODS: Record<string, { label: string; months: string[] }> = {
+  '4': { label: 'Nov 2024–Apr 2025', months: ['2024-09', '2024-10', '2024-11', '2024-12', '2025-01', '2025-02', '2025-03', '2025-04'] },
   '3': { label: 'Mei–Okt 2025', months: ['2025-03', '2025-04', '2025-05', '2025-06', '2025-07', '2025-08', '2025-09', '2025-10'] },
   '2': { label: 'Nov 2025–Apr 2026', months: ['2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04'] },
   '1': { label: 'Mei–Okt 2026', months: ['2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10'] },

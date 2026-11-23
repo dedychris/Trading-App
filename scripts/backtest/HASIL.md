@@ -107,3 +107,23 @@ Diuji di 20 koin utama, searah BTC & skip saat BTC netral.
 - Di 20×, fee 0,1% notional = 2% margin per trade = 0,29R. Winrate impas 43%, winrate backtest 33–36%.
 - 5 TP dari 8 trade: peluangnya ±8% walau winrate asli cuma 33%, dan 8 trade itu satu hari, satu arah (SHORT) → praktis satu taruhan.
 - Trailing & filter ATR mengurangi rugi, tapi tidak membuat untung.
+
+## Periode 4 (Nov 2024–Apr 2025, belum pernah disentuh) — aturan tidak diubah
+
+Kondisi pasar: naik (BTC +34%).
+
+| Strategi | Mei–Okt 2025 | Nov 2025–Apr 2026 | Mei–Okt 2026 | **Nov 2024–Apr 2025** | Total 24 bulan | DD terburuk |
+|---|---:|---:|---:|---:|---:|---:|
+| 1c Donchian 4H 55/20 | +5,7% | −18,9% | +49,5% | **+60,1%** | +105% | 25% |
+| 2 Momentum 7 hari | +3,8% | −7,9% | +26,8% | **+30,5%** | +58% | 23% |
+| 2 Momentum 30 hari | +4,3% | −10,0% | +19,2% | **+47,7%** | +65% | 24% |
+| (2 Momentum 14 hari) | −16,2% | +4,8% | +10,4% | +75,8% | +70% | 32% |
+| Acak, keluar seperti 1a | −14,8% | +2,5% | +11,1% | +52,9% | +47% | 16% |
+| Long semua koin terus | +12,2% | −24,2% | +9,1% | +42,8% | +33% | 45% |
+| Buy & hold BTC | +16,4% | −30,4% | +1,6% | +33,8% | +10% | — |
+
+- Ketiga kandidat plus di periode 4, tapi periode ini pasar naik: entry acak & long terus juga untung besar.
+- Syarat awal "plus di semua periode" tetap tidak terpenuhi: semua kandidat rugi di Nov 2025–Apr 2026 (pasar turun).
+- Momentum paling konsisten: lookback 7, 14, 30 hari semuanya total plus (+58% s/d +70%) → sinyalnya tidak bergantung
+  pada satu angka. Donchian sangat beda antar varian (harian +3%/+17% vs 4H +105%) dan bergantung pada 1–2 trade raksasa
+  (trade terbaik periode 4: 92,6R).
